@@ -11,12 +11,46 @@ static uint8_t task_pool_index = 0;
 /* Global Kernel Instance */
 static Kernel kernel = {0};
 
+/* Global pointer for ASM access */
+extern "C" TaskControlBlock *os_current_task_ptr;
+TaskControlBlock *os_current_task_ptr = NULL;
+
 /* Inline helper: get task node from static pool */
 static inline TaskNode *get_task_node(void) __attribute__((always_inline));
 static inline TaskNode *get_task_node(void) {
   if (task_pool_index >= MAX_TASKS)
     return NULL;
   return &task_pool[task_pool_index++];
+}
+
+/* Task Stack Initialization */
+static void os_init_stack(TaskNode *new_node) {
+  uint8_t *stack = (uint8_t *)os_malloc(new_node->task.stack_size);
+  if (!stack)
+    return;
+
+  /* Point to the end of stack (AVR stack grows down) */
+  uint8_t *sp = stack + new_node->task.stack_size - 1;
+
+  /* 1. PC (Return address for 'ret' in os_context_switch) */
+  uint16_t func_addr = (uint16_t)(uintptr_t)(new_node->task.task_func);
+  *sp-- = func_addr & 0xFF;        /* Low byte */
+  *sp-- = (func_addr >> 8) & 0xFF; /* High byte */
+
+  /* 2. R0 (Saved at very beginning of context switch) */
+  *sp-- = 0x00;
+
+  /* 3. SREG (Interrupts enabled by default for tasks) */
+  *sp-- = 0x80; /* Bit 7 (I) set */
+
+  /* 4. R1...R31 (R1 must be zero) */
+  *sp-- = 0x00; /* R1 */
+  for (uint8_t i = 2; i <= 31; i++) {
+    *sp-- = 0x00;
+  }
+
+  /* Store resulting SP */
+  new_node->task.stack_ptr = sp;
 }
 
 /* Initialize the OS */
@@ -96,8 +130,102 @@ void os_timer_init(void) {
   sei(); /* Enable interrupts */
 }
 
-/* Timer1 Compare Match A ISR */
-ISR(TIMER1_COMPA_vect) { os_system_tick(); }
+/* Timer1 Compare Match A ISR - Naked for custom context switch */
+ISR(TIMER1_COMPA_vect, ISR_NAKED) {
+  /* Save Context */
+  asm volatile("push r0 \n\t"
+               "in r0, %0 \n\t"
+               "push r0 \n\t"
+               "push r1 \n\t"
+               "clr r1 \n\t"
+               "push r2 \n\t"
+               "push r3 \n\t"
+               "push r4 \n\t"
+               "push r5 \n\t"
+               "push r6 \n\t"
+               "push r7 \n\t"
+               "push r8 \n\t"
+               "push r9 \n\t"
+               "push r10 \n\t"
+               "push r11 \n\t"
+               "push r12 \n\t"
+               "push r13 \n\t"
+               "push r14 \n\t"
+               "push r15 \n\t"
+               "push r16 \n\t"
+               "push r17 \n\t"
+               "push r18 \n\t"
+               "push r19 \n\t"
+               "push r20 \n\t"
+               "push r21 \n\t"
+               "push r22 \n\t"
+               "push r23 \n\t"
+               "push r24 \n\t"
+               "push r25 \n\t"
+               "push r26 \n\t"
+               "push r27 \n\t"
+               "push r28 \n\t"
+               "push r29 \n\t"
+               "push r30 \n\t"
+               "push r31 \n\t" ::"I"(_SFR_IO_ADDR(SREG)));
+
+  /* Save current SP to TCB */
+  if (os_current_task_ptr) {
+    uint16_t sp_val = SPL | (SPH << 8);
+    os_current_task_ptr->stack_ptr = (uint8_t *)sp_val;
+  }
+
+  /* Call OS tick */
+  os_system_tick();
+
+  /* Call Scheduler to pick next task */
+  os_scheduler();
+
+  /* Load new SP from TCB */
+  if (os_current_task_ptr) {
+    uint16_t sp_val = (uint16_t)os_current_task_ptr->stack_ptr;
+    SPL = sp_val & 0xFF;
+    SPH = sp_val >> 8;
+  }
+
+  /* Restore Context */
+  asm volatile("pop r31 \n\t"
+               "pop r30 \n\t"
+               "pop r29 \n\t"
+               "pop r28 \n\t"
+               "pop r27 \n\t"
+               "pop r26 \n\t"
+               "pop r25 \n\t"
+               "pop r24 \n\t"
+               "pop r23 \n\t"
+               "pop r22 \n\t"
+               "pop r21 \n\t"
+               "pop r20 \n\t"
+               "pop r19 \n\t"
+               "pop r18 \n\t"
+               "pop r17 \n\t"
+               "pop r16 \n\t"
+               "pop r15 \n\t"
+               "pop r14 \n\t"
+               "pop r13 \n\t"
+               "pop r12 \n\t"
+               "pop r11 \n\t"
+               "pop r10 \n\t"
+               "pop r9 \n\t"
+               "pop r8 \n\t"
+               "pop r7 \n\t"
+               "pop r6 \n\t"
+               "pop r5 \n\t"
+               "pop r4 \n\t"
+               "pop r3 \n\t"
+               "pop r2 \n\t"
+               "pop r1 \n\t"
+               "pop r0 \n\t"
+               "pop r0 \n\t"
+               "out %0, r0 \n\t"
+               "pop r0 \n\t"
+               "reti \n\t" ::"I"(_SFR_IO_ADDR(SREG)));
+}
 
 /* Get current tick count - atomic read */
 uint16_t os_get_tick(void) {
@@ -183,6 +311,8 @@ void os_create_task(uint8_t id, void (*task_func)(void), uint8_t priority,
   new_node->task.delta_ticks = 0;
   new_node->next = NULL;
 
+  os_init_stack(new_node);
+
   heap_push(new_node);
   kernel.task_count++;
 
@@ -193,18 +323,27 @@ void os_create_task(uint8_t id, void (*task_func)(void), uint8_t priority,
 
 /* Priority-Based Scheduler */
 void os_scheduler(void) {
-  if (kernel.ready_heap.size == 0)
+  /* Put current task back in the ready heap if it's still ready/running */
+  if (kernel.current_node && (kernel.current_task->state == TASK_RUNNING ||
+                              kernel.current_task->state == TASK_READY)) {
+    kernel.current_task->state = TASK_READY;
+    heap_push(kernel.current_node);
+  }
+
+  if (kernel.ready_heap.size == 0) {
+    os_current_task_ptr = NULL;
+    kernel.current_task = NULL;
+    kernel.current_node = NULL;
     return;
+  }
 
   /* Get highest priority ready task */
   TaskNode *next_node = heap_pop();
-  if (next_node && next_node->task.state == TASK_READY) {
+  if (next_node) {
+    os_current_task_ptr = &next_node->task;
     kernel.current_task = &next_node->task;
     kernel.current_node = next_node;
     kernel.current_task->state = TASK_RUNNING;
-
-    /* Re-insert into heap (for round-robin among same priority) */
-    heap_push(next_node);
   }
 }
 
@@ -264,41 +403,18 @@ static void blocked_queue_add(TaskNode *node, uint16_t ticks) {
 /* Task Delay - O(1) using stored current_node pointer */
 void os_delay(uint16_t ticks) {
   if (kernel.current_task && kernel.current_node && ticks > 0) {
-    kernel.current_task->state = TASK_BLOCKED;
-
-    TaskNode *node = kernel.current_node;
-    if (!node)
-      return;
-
-    /* O(N) removal from heap: find and remove the node */
-    uint8_t found = 0;
-    for (uint8_t i = 0; i < kernel.ready_heap.size; i++) {
-      if (kernel.ready_heap.nodes[i] == node) {
-        kernel.ready_heap.nodes[i] =
-            kernel.ready_heap.nodes[--kernel.ready_heap.size];
-        /* Re-heapify at index i */
-        // Simplified: push/pop would be better but this is a rare removal
-        found = 1;
-        break;
-      }
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+      kernel.current_task->state = TASK_BLOCKED;
+      blocked_queue_add(kernel.current_node, ticks);
+      os_context_switch();
     }
-
-    if (found) {
-      /* Add to blocked queue using delta encoding */
-      blocked_queue_add(node, ticks);
-    }
-
-    kernel.current_task = NULL;
-    kernel.current_node = NULL;
   }
 }
 
 /* Task Yield - voluntary context switch */
 void os_task_yield(void) {
   if (kernel.current_task) {
-    kernel.current_task->state = TASK_READY;
-    kernel.current_task = NULL;
-    kernel.current_node = NULL;
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) { os_context_switch(); }
   }
 }
 
@@ -485,13 +601,53 @@ void os_enter_idle(void) {
 void os_start(void) {
   os_timer_init(); /* Start system tick timer */
 
+  /* Initial context switch - pick the first task and start it */
+  os_scheduler();
+
+  if (os_current_task_ptr) {
+    uint16_t sp_val = (uint16_t)os_current_task_ptr->stack_ptr;
+    SPL = sp_val & 0xFF;
+    SPH = sp_val >> 8;
+
+    /* Restore context of the first task */
+    asm volatile("pop r31 \n\t"
+                 "pop r30 \n\t"
+                 "pop r29 \n\t"
+                 "pop r28 \n\t"
+                 "pop r27 \n\t"
+                 "pop r26 \n\t"
+                 "pop r25 \n\t"
+                 "pop r24 \n\t"
+                 "pop r23 \n\t"
+                 "pop r22 \n\t"
+                 "pop r21 \n\t"
+                 "pop r20 \n\t"
+                 "pop r19 \n\t"
+                 "pop r18 \n\t"
+                 "pop r17 \n\t"
+                 "pop r16 \n\t"
+                 "pop r15 \n\t"
+                 "pop r14 \n\t"
+                 "pop r13 \n\t"
+                 "pop r12 \n\t"
+                 "pop r11 \n\t"
+                 "pop r10 \n\t"
+                 "pop r9 \n\t"
+                 "pop r8 \n\t"
+                 "pop r7 \n\t"
+                 "pop r6 \n\t"
+                 "pop r5 \n\t"
+                 "pop r4 \n\t"
+                 "pop r3 \n\t"
+                 "pop r2 \n\t"
+                 "pop r1 \n\t"
+                 "pop r0 \n\t"
+                 "out %0, r0 \n\t"
+                 "pop r0 \n\t"
+                 "ret \n\t" ::"I"(_SFR_IO_ADDR(SREG)));
+  }
+
   while (1) {
-    if (kernel.ready_heap.size > 0) {
-      os_scheduler();
-      os_run_task();
-      os_check_stack_overflow();
-    } else {
-      os_enter_idle();
-    }
+    os_enter_idle();
   }
 }

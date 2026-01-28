@@ -22,7 +22,11 @@ typedef struct {
   uint16_t stack_size;
   uint8_t priority;     /* Higher = more important */
   uint16_t delta_ticks; /* Delta time for blocked queue */
+  uint8_t *stack_ptr;   /* Current stack pointer for context switch */
 } TaskControlBlock;
+
+/* External assembly functions */
+extern "C" void os_context_switch(void);
 
 /* Task Queue Node */
 typedef struct TaskNode {
