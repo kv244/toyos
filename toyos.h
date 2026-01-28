@@ -7,6 +7,11 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* Configuration */
+#define MAX_TASKS 8
+
+/* Task States */
 typedef enum { TASK_READY, TASK_RUNNING, TASK_BLOCKED } TaskState;
 
 /* Task Control Block */
@@ -15,8 +20,8 @@ typedef struct {
   TaskState state;
   void (*task_func)(void);
   uint16_t stack_size;
-  uint8_t priority;
-  uint16_t tick_count;
+  uint8_t priority;     /* Higher = more important */
+  uint16_t delta_ticks; /* Delta time for blocked queue */
 } TaskControlBlock;
 
 /* Task Queue Node */
@@ -42,8 +47,9 @@ typedef struct {
 /* Kernel Structure */
 typedef struct {
   TaskQueue ready_queue;
-  TaskQueue blocked_queue; /* Separate queue for blocked tasks */
+  TaskQueue blocked_queue; /* Delta queue for blocked tasks */
   TaskControlBlock *current_task;
+  TaskNode *current_node; /* Direct pointer to current task's node */
   MemoryManager mem_manager;
   volatile uint16_t system_tick;
   uint8_t task_count;

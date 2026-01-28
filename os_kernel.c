@@ -1,10 +1,22 @@
 #include "toyos.h"
 #include <avr/interrupt.h>
 #include <avr/io.h>
+#include <util/atomic.h>
 
+/* Static Task Pool - no dynamic allocation overhead */
+static TaskNode task_pool[MAX_TASKS];
+static uint8_t task_pool_index = 0;
 
 /* Global Kernel Instance */
 static Kernel kernel = {0};
+
+/* Inline helper: get task node from static pool */
+static inline TaskNode *get_task_node(void) __attribute__((always_inline));
+static inline TaskNode *get_task_node(void) {
+  if (task_pool_index >= MAX_TASKS)
+    return NULL;
+  return &task_pool[task_pool_index++];
+}
 
 /* Initialize the OS */
 void os_init(uint8_t *mem_pool, uint16_t mem_size) {
@@ -15,15 +27,17 @@ void os_init(uint8_t *mem_pool, uint16_t mem_size) {
   kernel.blocked_queue.tail = NULL;
   kernel.blocked_queue.count = 0;
   kernel.current_task = NULL;
+  kernel.current_node = NULL;
   kernel.system_tick = 0;
   kernel.task_count = 0;
 
-  /* Initialize memory manager */
+  /* Initialize memory manager (still available for user allocations) */
   kernel.mem_manager.memory_pool = mem_pool;
   kernel.mem_manager.total_size = mem_size;
   kernel.mem_manager.allocated = 0;
 
-  memset(mem_pool, 0, mem_size);
+  /* Reset task pool index */
+  task_pool_index = 0;
 }
 
 /* Initialize Timer1 for ~1ms system tick at 16MHz */
@@ -46,17 +60,17 @@ void os_timer_init(void) {
 /* Timer1 Compare Match A ISR */
 ISR(TIMER1_COMPA_vect) { os_system_tick(); }
 
-/* Get current tick count */
+/* Get current tick count - atomic read */
 uint16_t os_get_tick(void) {
   uint16_t tick;
-  cli();
-  tick = kernel.system_tick;
-  sei();
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) { tick = kernel.system_tick; }
   return tick;
 }
 
-/* Add task node to a queue */
-static void queue_add(TaskQueue *queue, TaskNode *node) {
+/* Inline: Add task node to queue tail (for round-robin fallback) */
+static inline void queue_add_tail(TaskQueue *queue, TaskNode *node)
+    __attribute__((always_inline));
+static inline void queue_add_tail(TaskQueue *queue, TaskNode *node) {
   node->next = NULL;
   if (queue->tail == NULL) {
     queue->head = node;
@@ -68,8 +82,37 @@ static void queue_add(TaskQueue *queue, TaskNode *node) {
   queue->count++;
 }
 
-/* Remove task node from front of queue */
-static TaskNode *queue_remove(TaskQueue *queue) {
+/* Priority-based insertion: higher priority tasks at front */
+static void queue_add_priority(TaskQueue *queue, TaskNode *node) {
+  node->next = NULL;
+
+  if (queue->head == NULL) {
+    /* Empty queue */
+    queue->head = node;
+    queue->tail = node;
+  } else if (node->task.priority > queue->head->task.priority) {
+    /* Insert at front (highest priority) */
+    node->next = queue->head;
+    queue->head = node;
+  } else {
+    /* Find insertion point */
+    TaskNode *curr = queue->head;
+    while (curr->next && curr->next->task.priority >= node->task.priority) {
+      curr = curr->next;
+    }
+    node->next = curr->next;
+    curr->next = node;
+    if (node->next == NULL) {
+      queue->tail = node;
+    }
+  }
+  queue->count++;
+}
+
+/* Inline: Remove task node from front of queue */
+static inline TaskNode *queue_remove(TaskQueue *queue)
+    __attribute__((always_inline));
+static inline TaskNode *queue_remove(TaskQueue *queue) {
   if (queue->head == NULL)
     return NULL;
 
@@ -83,13 +126,13 @@ static TaskNode *queue_remove(TaskQueue *queue) {
   return node;
 }
 
-/* Create a new task */
+/* Create a new task - uses static pool */
 void os_create_task(uint8_t id, void (*task_func)(void), uint8_t priority,
                     uint16_t stack_size) {
-  if (kernel.task_count >= 8)
-    return; /* Max 8 tasks on Arduino UNO */
+  if (kernel.task_count >= MAX_TASKS)
+    return;
 
-  TaskNode *new_node = (TaskNode *)os_malloc(sizeof(TaskNode));
+  TaskNode *new_node = get_task_node();
   if (!new_node)
     return;
 
@@ -98,67 +141,116 @@ void os_create_task(uint8_t id, void (*task_func)(void), uint8_t priority,
   new_node->task.task_func = task_func;
   new_node->task.priority = priority;
   new_node->task.stack_size = stack_size;
-  new_node->task.tick_count = 0;
+  new_node->task.delta_ticks = 0;
   new_node->next = NULL;
 
-  queue_add(&kernel.ready_queue, new_node);
+  queue_add_priority(&kernel.ready_queue, new_node);
   kernel.task_count++;
 }
 
-/* Simple Round-Robin Scheduler */
+/* Priority-Based Scheduler */
 void os_scheduler(void) {
   if (kernel.ready_queue.head == NULL)
     return;
 
-  /* Get next ready task from queue */
+  /* Get highest priority ready task (always at head) */
   TaskNode *next_node = queue_remove(&kernel.ready_queue);
   if (next_node && next_node->task.state == TASK_READY) {
     kernel.current_task = &next_node->task;
+    kernel.current_node = next_node; /* Store direct pointer for O(1) delay */
     kernel.current_task->state = TASK_RUNNING;
 
-    /* Re-queue the task at the back */
-    queue_add(&kernel.ready_queue, next_node);
+    /* Re-queue the task by priority */
+    queue_add_priority(&kernel.ready_queue, next_node);
   }
 }
 
-/* Execute current task */
-static void os_run_task(void) {
-  if (kernel.current_task && kernel.current_task->task_func) {
-    kernel.current_task->task_func();
+/* Execute current task - inlined for performance */
+static inline void os_run_task(void) __attribute__((always_inline));
+static inline void os_run_task(void) {
+  register TaskControlBlock *task = kernel.current_task;
+  if (task && task->task_func) {
+    task->task_func();
   }
 }
 
-/* Task Delay (blocks task for N ticks) */
-void os_delay(uint16_t ticks) {
-  if (kernel.current_task && ticks > 0) {
-    kernel.current_task->state = TASK_BLOCKED;
-    kernel.current_task->tick_count = ticks;
+/* Delta Queue insertion for blocked tasks */
+static void blocked_queue_add(TaskNode *node, uint16_t ticks) {
+  node->next = NULL;
+  node->task.delta_ticks = ticks;
 
-    /* Move task to blocked queue - find and remove from ready queue */
+  if (kernel.blocked_queue.head == NULL) {
+    /* Empty queue */
+    kernel.blocked_queue.head = node;
+    kernel.blocked_queue.tail = node;
+  } else {
+    /* Find insertion point using delta encoding */
     TaskNode *prev = NULL;
-    TaskNode *curr = kernel.ready_queue.head;
-    while (curr) {
-      if (&curr->task == kernel.current_task) {
-        /* Remove from ready queue */
-        if (prev) {
-          prev->next = curr->next;
-        } else {
-          kernel.ready_queue.head = curr->next;
-        }
-        if (curr == kernel.ready_queue.tail) {
-          kernel.ready_queue.tail = prev;
-        }
-        kernel.ready_queue.count--;
+    TaskNode *curr = kernel.blocked_queue.head;
+    uint16_t accumulated = 0;
 
-        /* Add to blocked queue */
-        queue_add(&kernel.blocked_queue, curr);
-        break;
-      }
+    while (curr && (accumulated + curr->task.delta_ticks) <= ticks) {
+      accumulated += curr->task.delta_ticks;
       prev = curr;
       curr = curr->next;
     }
 
+    /* Store remaining delta */
+    node->task.delta_ticks = ticks - accumulated;
+
+    /* Adjust next node's delta */
+    if (curr) {
+      curr->task.delta_ticks -= node->task.delta_ticks;
+    }
+
+    /* Insert node */
+    if (prev == NULL) {
+      node->next = kernel.blocked_queue.head;
+      kernel.blocked_queue.head = node;
+    } else {
+      node->next = curr;
+      prev->next = node;
+      if (curr == NULL) {
+        kernel.blocked_queue.tail = node;
+      }
+    }
+  }
+  kernel.blocked_queue.count++;
+}
+
+/* Task Delay - O(1) using stored current_node pointer */
+void os_delay(uint16_t ticks) {
+  if (kernel.current_task && kernel.current_node && ticks > 0) {
+    kernel.current_task->state = TASK_BLOCKED;
+
+    /* O(1) removal: we have direct pointer to current node */
+    TaskNode *node = kernel.current_node;
+
+    /* Remove from ready queue */
+    TaskNode *prev = NULL;
+    TaskNode *curr = kernel.ready_queue.head;
+    while (curr && curr != node) {
+      prev = curr;
+      curr = curr->next;
+    }
+
+    if (curr == node) {
+      if (prev) {
+        prev->next = curr->next;
+      } else {
+        kernel.ready_queue.head = curr->next;
+      }
+      if (curr == kernel.ready_queue.tail) {
+        kernel.ready_queue.tail = prev;
+      }
+      kernel.ready_queue.count--;
+
+      /* Add to blocked queue using delta encoding */
+      blocked_queue_add(node, ticks);
+    }
+
     kernel.current_task = NULL;
+    kernel.current_node = NULL;
   }
 }
 
@@ -167,10 +259,11 @@ void os_task_yield(void) {
   if (kernel.current_task) {
     kernel.current_task->state = TASK_READY;
     kernel.current_task = NULL;
+    kernel.current_node = NULL;
   }
 }
 
-/* Simple Memory Allocation (bump allocator) */
+/* Simple Memory Allocation (bump allocator) - for user data */
 void *os_malloc(uint16_t size) {
   /* Align to 2-byte boundary */
   size = (size + 1) & ~1;
@@ -187,43 +280,29 @@ void *os_malloc(uint16_t size) {
 /* Simple Memory Deallocation (no-op in bump allocator) */
 void os_free(void *ptr) { (void)ptr; /* Unused in bump allocator */ }
 
-/* System tick (called from Timer1 ISR) */
+/* System tick - O(1) delta queue processing */
 void os_system_tick(void) {
   kernel.system_tick++;
 
-  /* Check blocked tasks and unblock if ready */
-  TaskNode *prev = NULL;
-  TaskNode *curr = kernel.blocked_queue.head;
+  /* Delta queue: only decrement first node */
+  if (kernel.blocked_queue.head == NULL)
+    return;
 
-  while (curr) {
-    TaskNode *next = curr->next;
+  kernel.blocked_queue.head->task.delta_ticks--;
 
-    if (curr->task.tick_count > 0) {
-      curr->task.tick_count--;
-      if (curr->task.tick_count == 0) {
-        /* Remove from blocked queue */
-        if (prev) {
-          prev->next = next;
-        } else {
-          kernel.blocked_queue.head = next;
-        }
-        if (curr == kernel.blocked_queue.tail) {
-          kernel.blocked_queue.tail = prev;
-        }
-        kernel.blocked_queue.count--;
-
-        /* Add to ready queue */
-        curr->task.state = TASK_READY;
-        queue_add(&kernel.ready_queue, curr);
-
-        /* Don't update prev since we removed curr */
-      } else {
-        prev = curr;
-      }
-    } else {
-      prev = curr;
+  /* Unblock all tasks with zero delta */
+  while (kernel.blocked_queue.head &&
+         kernel.blocked_queue.head->task.delta_ticks == 0) {
+    TaskNode *node = kernel.blocked_queue.head;
+    kernel.blocked_queue.head = node->next;
+    if (kernel.blocked_queue.head == NULL) {
+      kernel.blocked_queue.tail = NULL;
     }
-    curr = next;
+    kernel.blocked_queue.count--;
+
+    /* Move to ready queue by priority */
+    node->task.state = TASK_READY;
+    queue_add_priority(&kernel.ready_queue, node);
   }
 }
 
