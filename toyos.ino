@@ -1,96 +1,113 @@
-/*
- * ToyOS - A Simple RTOS for Arduino UNO R3
- * Main application file (Arduino-compatible)
- */
-
 #include "toyos.h"
 #include <Arduino.h>
 
+/* Memory pool for OS (1KB) */
+static uint8_t mem_pool[1024];
 
-/* Memory pool for OS (768 bytes, leaving room for stack) */
-static uint8_t mem_pool[768];
+/* Shared resources */
+Mutex led_mutex;
+MessageQueue *sensor_mq;
 
-/* Task counters */
-volatile uint16_t blink_counter = 0;
-volatile uint16_t sensor_counter = 0;
-volatile uint16_t compute_counter = 0;
+/* Global state for display */
+volatile int shared_data = 0;
 
 /* LED Pin */
 #define LED_PIN 13
 
-/* Task 1: LED Blink Task */
-void task_blink(void) {
-  blink_counter++;
+/* Task 1: Sensor Producer (High Priority)
+ * Periodically reads a sensor and sends data to a queue.
+ */
+void task_producer(void) {
+  static int count = 0;
+  while (1) {
+    int val = analogRead(A0);
 
-  /* Toggle LED */
-  static uint8_t led_state = 0;
-  led_state = !led_state;
-  digitalWrite(LED_PIN, led_state);
+    /* Simulate some processing */
+    count++;
 
-  Serial.print(F("Task 1 (Blink): Counter = "));
-  Serial.println(blink_counter);
+    /* Send pointer to value/data (for demo, we'll just cast the value) */
+    os_mq_send(sensor_mq, (void *)(uintptr_t)val);
 
-  os_delay(500); /* Block for 500 ticks (500ms) */
+    Serial.print(F("[Producer] Sent: "));
+    Serial.println(val);
+
+    os_delay(1000); /* Read every 1 second */
+  }
 }
 
-/* Task 2: Simulated Sensor Task */
-void task_sensor(void) {
-  sensor_counter++;
+/* Task 2: Data Consumer (Medium Priority)
+ * Waits for data and prints it.
+ */
+void task_consumer(void) {
+  while (1) {
+    void *msg = os_mq_receive(sensor_mq);
+    int val = (int)(uintptr_t)msg;
 
-  /* Read analog sensor (A0) */
-  int sensor_value = analogRead(A0);
+    Serial.print(F("[Consumer] Processed: "));
+    Serial.println(val);
 
-  Serial.print(F("Task 2 (Sensor): Counter = "));
-  Serial.print(sensor_counter);
-  Serial.print(F(", Value = "));
-  Serial.println(sensor_value);
-
-  os_delay(250); /* Block for 250 ticks (250ms) */
+    /* Access shared resource using Mutex */
+    os_mutex_lock(&led_mutex);
+    shared_data = val;
+    os_mutex_unlock(&led_mutex);
+  }
 }
 
-/* Task 3: Compute Task */
-void task_compute(void) {
-  compute_counter++;
+/* Task 3 & 4: Mutex Competition tasks (Low Priority)
+ * Both tasks try to toggle the same LED.
+ */
+void task_led_a(void) {
+  while (1) {
+    os_mutex_lock(&led_mutex);
+    Serial.println(F("Task A has LED Mutex"));
+    digitalWrite(LED_PIN, HIGH);
+    os_delay(200);
+    digitalWrite(LED_PIN, LOW);
+    os_mutex_unlock(&led_mutex);
 
-  /* Simple computation example */
-  static uint32_t sum = 0;
-  sum += compute_counter;
+    os_delay(500);
+  }
+}
 
-  Serial.print(F("Task 3 (Compute): Iteration = "));
-  Serial.print(compute_counter);
-  Serial.print(F(", Sum = "));
-  Serial.println(sum);
+void task_led_b(void) {
+  while (1) {
+    os_mutex_lock(&led_mutex);
+    Serial.println(F("Task B has LED Mutex"));
+    digitalWrite(LED_PIN, HIGH);
+    os_delay(100);
+    digitalWrite(LED_PIN, LOW);
+    os_mutex_unlock(&led_mutex);
 
-  os_task_yield(); /* Voluntary yield */
+    os_delay(300);
+  }
 }
 
 void setup() {
-  /* Initialize Serial */
   Serial.begin(115200);
-  while (!Serial) {
-    ; /* Wait for serial port to connect (needed for native USB) */
-  }
+  while (!Serial)
+    ;
 
-  Serial.println(F("ToyOS - Arduino UNO R3"));
-  Serial.println(F("Initializing..."));
+  Serial.println(F("ToyOS V2.0 - True Context Switching Demo"));
+  Serial.println(F("========================================"));
 
-  /* Initialize LED pin */
   pinMode(LED_PIN, OUTPUT);
-  digitalWrite(LED_PIN, LOW);
 
-  /* Initialize OS */
+  /* Initialize OS and primitives */
   os_init(mem_pool, sizeof(mem_pool));
+  os_mutex_init(&led_mutex);
+  sensor_mq = os_mq_create(5); /* Capacity of 5 messages */
 
-  /* Create tasks with different priorities */
-  os_create_task(1, task_blink, 1, 64);   /* LED blink task */
-  os_create_task(2, task_sensor, 2, 64);  /* Sensor task */
-  os_create_task(3, task_compute, 3, 64); /* Compute task */
+  /* Create tasks:
+   * (ID, Func, Priority, StackSize)
+   * Higher priority = higher number? (Based on heap logic: bigger first)
+   */
+  os_create_task(10, task_producer, 10, 128); /* Highest priority */
+  os_create_task(5, task_consumer, 5, 128);   /* Medium priority */
+  os_create_task(1, task_led_a, 1, 128);      /* Low priority */
+  os_create_task(2, task_led_b, 1, 128);      /* Low priority */
 
-  Serial.println(F("Starting scheduler..."));
-  Serial.println(F("---"));
-
-  /* Start the OS scheduler (never returns) */
+  Serial.println(F("Starting Pre-emptive Scheduler..."));
   os_start();
 }
 
-void loop() { /* Never reached - os_start() runs forever */ }
+void loop() {}
