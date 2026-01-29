@@ -1,5 +1,6 @@
 #include <avr/io.h>
-#include "toyos.h"
+.set TCB_STACK_PTR_OFFSET, 9
+.set SREG_I_BIT, 0x80
 
 .global os_context_switch
 .global fast_zero_stack
