@@ -15,6 +15,11 @@ static Kernel kernel = {0};
 extern "C" TaskControlBlock *os_current_task_ptr;
 TaskControlBlock *os_current_task_ptr = NULL;
 
+/* Assembly helper functions */
+extern "C" {
+void fast_zero_stack(uint8_t *sp, uint8_t count);
+}
+
 /* Inline helper: get task node from static pool */
 static inline TaskNode *get_task_node(void) __attribute__((always_inline));
 static inline TaskNode *get_task_node(void) {
@@ -23,34 +28,41 @@ static inline TaskNode *get_task_node(void) {
   return &task_pool[task_pool_index++];
 }
 
-/* Task Stack Initialization */
-static void os_init_stack(TaskNode *new_node) {
-  uint8_t *stack = (uint8_t *)os_malloc(new_node->task.stack_size);
+/* Task Stack Initialization - FIXED: Proper stack layout for context restore */
+static uint8_t *os_init_stack(uint16_t stack_size, void (*task_func)(void), 
+                               uint32_t **canary_ptr_out) {
+  uint8_t *stack = (uint8_t *)os_malloc(stack_size);
   if (!stack)
-    return;
+    return NULL;
+
+  /* Place canary at bottom of stack for overflow detection */
+  *(uint32_t*)stack = STACK_CANARY;
+  *canary_ptr_out = (uint32_t*)stack;
 
   /* Point to the end of stack (AVR stack grows down) */
-  uint8_t *sp = stack + new_node->task.stack_size - 1;
+  uint8_t *sp = stack + stack_size - 1;
 
-  /* 1. PC (Return address for 'ret' in os_context_switch) */
-  uint16_t func_addr = (uint16_t)(uintptr_t)(new_node->task.task_func);
-  *sp-- = func_addr & 0xFF;        /* Low byte */
-  *sp-- = (func_addr >> 8) & 0xFF; /* High byte */
+  /* Stack layout (from high to low address):
+   * - PC High byte (return address for 'ret')
+   * - PC Low byte
+   * - R0 (temporary storage for SREG during restore)
+   * - SREG (status register with I bit set)
+   * - R1 (zero register)
+   * - R2-R31 (general purpose registers)
+   */
+  
+  uint16_t func_addr = (uint16_t)(uintptr_t)task_func;
+  *sp-- = (func_addr >> 8) & 0xFF; /* PC High byte */
+  *sp-- = func_addr & 0xFF;        /* PC Low byte */
+  *sp-- = 0x00;                    /* R0 (temp for SREG) */
+  *sp-- = SREG_I_BIT;              /* SREG (I bit set) */
+  *sp-- = 0x00;                    /* R1 (zero register) */
 
-  /* 2. R0 (Saved at very beginning of context switch) */
-  *sp-- = 0x00;
+  /* R2-R31: Use assembly helper for efficiency */
+  fast_zero_stack(sp, 30);
+  sp -= 30;
 
-  /* 3. SREG (Interrupts enabled by default for tasks) */
-  *sp-- = 0x80; /* Bit 7 (I) set */
-
-  /* 4. R1...R31 (R1 must be zero) */
-  *sp-- = 0x00; /* R1 */
-  for (uint8_t i = 2; i <= 31; i++) {
-    *sp-- = 0x00;
-  }
-
-  /* Store resulting SP */
-  new_node->task.stack_ptr = sp;
+  return sp;
 }
 
 /* Initialize the OS */
@@ -64,7 +76,7 @@ void os_init(uint8_t *mem_pool, uint16_t mem_size) {
   kernel.system_tick = 0;
   kernel.task_count = 0;
 
-  /* Initialize memory manager (still available for user allocations) */
+  /* Initialize memory manager */
   kernel.mem_manager.memory_pool = mem_pool;
   kernel.mem_manager.total_size = mem_size;
   kernel.mem_manager.allocated = 0;
@@ -73,8 +85,9 @@ void os_init(uint8_t *mem_pool, uint16_t mem_size) {
   task_pool_index = 0;
 }
 
-/* Binary Heap Helpers */
+/* Binary Heap Helpers - with assertions */
 static void heap_push(TaskNode *node) {
+  ASSERT(kernel.ready_heap.size < MAX_TASKS);
   if (kernel.ready_heap.size >= MAX_TASKS)
     return;
 
@@ -119,10 +132,10 @@ void os_timer_init(void) {
 
   /* Timer1 CTC mode, prescaler 64 */
   TCCR1A = 0;
-  TCCR1B = (1 << WGM12) | (1 << CS11) | (1 << CS10); /* CTC, prescaler 64 */
+  TCCR1B = (1 << WGM12) | TIMER1_PRESCALER_64;
 
-  /* For 1ms tick at 16MHz with prescaler 64: 16000000/64/1000 = 250 */
-  OCR1A = 249; /* 1ms interval */
+  /* For 1ms tick at 16MHz with prescaler 64: 16000000/64/1000 = 250 - 1 */
+  OCR1A = TIMER1_1MS_AT_16MHZ;
 
   /* Enable Timer1 compare match A interrupt */
   TIMSK1 = (1 << OCIE1A);
@@ -133,7 +146,7 @@ void os_timer_init(void) {
 /* Timer1 Compare Match A ISR - Naked for custom context switch */
 ISR(TIMER1_COMPA_vect, ISR_NAKED) {
   /* Save Context */
-  asm volatile("push r0 \n\t"
+  __asm__ __volatile__("push r0 \n\t"
                "in r0, %0 \n\t"
                "push r0 \n\t"
                "push r1 \n\t"
@@ -189,7 +202,7 @@ ISR(TIMER1_COMPA_vect, ISR_NAKED) {
   }
 
   /* Restore Context */
-  asm volatile("pop r31 \n\t"
+  __asm__ __volatile__("pop r31 \n\t"
                "pop r30 \n\t"
                "pop r29 \n\t"
                "pop r28 \n\t"
@@ -221,16 +234,17 @@ ISR(TIMER1_COMPA_vect, ISR_NAKED) {
                "pop r2 \n\t"
                "pop r1 \n\t"
                "pop r0 \n\t"
-               "pop r0 \n\t"
                "out %0, r0 \n\t"
                "pop r0 \n\t"
                "reti \n\t" ::"I"(_SFR_IO_ADDR(SREG)));
 }
 
-/* Get current tick count - atomic read */
-uint16_t os_get_tick(void) {
-  uint16_t tick;
-  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) { tick = kernel.system_tick; }
+/* Get current tick count - atomic read for uint32_t */
+uint32_t os_get_tick(void) {
+  uint32_t tick;
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) { 
+    tick = kernel.system_tick; 
+  }
   return tick;
 }
 
@@ -245,33 +259,6 @@ static inline void queue_add_tail(TaskQueue *queue, TaskNode *node) {
   } else {
     queue->tail->next = node;
     queue->tail = node;
-  }
-  queue->count++;
-}
-
-/* Priority-based insertion: higher priority tasks at front */
-static void queue_add_priority(TaskQueue *queue, TaskNode *node) {
-  node->next = NULL;
-
-  if (queue->head == NULL) {
-    /* Empty queue */
-    queue->head = node;
-    queue->tail = node;
-  } else if (node->task.priority > queue->head->task.priority) {
-    /* Insert at front (highest priority) */
-    node->next = queue->head;
-    queue->head = node;
-  } else {
-    /* Find insertion point */
-    TaskNode *curr = queue->head;
-    while (curr->next && curr->next->task.priority >= node->task.priority) {
-      curr = curr->next;
-    }
-    node->next = curr->next;
-    curr->next = node;
-    if (node->next == NULL) {
-      queue->tail = node;
-    }
   }
   queue->count++;
 }
@@ -293,9 +280,16 @@ static inline TaskNode *queue_remove(TaskQueue *queue) {
   return node;
 }
 
-/* Create a new task - uses static pool */
+/**
+ * Create a new task - FIXED: No memory leak on failure
+ * Validates stack size and properly handles allocation failures.
+ */
 void os_create_task(uint8_t id, void (*task_func)(void), uint8_t priority,
                     uint16_t stack_size) {
+  /* Validate parameters */
+  ASSERT(task_func != NULL);
+  ASSERT(stack_size >= MIN_STACK_SIZE);
+  
   if (kernel.task_count >= MAX_TASKS)
     return;
 
@@ -303,56 +297,67 @@ void os_create_task(uint8_t id, void (*task_func)(void), uint8_t priority,
   if (!new_node)
     return;
 
+  /* Clamp stack size to minimum if too small */
+  if (stack_size < MIN_STACK_SIZE) {
+    stack_size = MIN_STACK_SIZE;
+  }
+
+  /* Initialize stack and get canary pointer - FIXED */
+  uint32_t *canary_ptr = NULL;
+  uint8_t *sp = os_init_stack(stack_size, task_func, &canary_ptr);
+  if (!sp) {
+    /* Failed to allocate stack - return node to pool */
+    task_pool_index--;
+    return;
+  }
+
   new_node->task.id = id;
   new_node->task.state = TASK_READY;
   new_node->task.task_func = task_func;
   new_node->task.priority = priority;
   new_node->task.stack_size = stack_size;
   new_node->task.delta_ticks = 0;
+  new_node->task.stack_ptr = sp;
+  new_node->task.canary_ptr = canary_ptr;
   new_node->next = NULL;
 
-  os_init_stack(new_node);
-
+  /* Add to ready heap with atomic protection */
+  ATOMIC_START();
   heap_push(new_node);
   kernel.task_count++;
-
-  /* Initialize stack canary */
-  // Note: This assumes task_func is near the end of stack or we have stack
-  // pointer For a real check, we'd need to know the stack top address.
+  ATOMIC_END();
 }
 
-/* Priority-Based Scheduler */
+/* Priority-Based Scheduler - FIXED: Skip blocked tasks */
 void os_scheduler(void) {
-  /* Put current task back in the ready heap if it's still ready/running */
-  if (kernel.current_node && (kernel.current_task->state == TASK_RUNNING ||
-                              kernel.current_task->state == TASK_READY)) {
+  /* Put current task back in the ready heap ONLY if it's ready/running */
+  if (kernel.current_node && 
+      (kernel.current_task->state == TASK_RUNNING ||
+       kernel.current_task->state == TASK_READY)) {
     kernel.current_task->state = TASK_READY;
     heap_push(kernel.current_node);
   }
 
-  if (kernel.ready_heap.size == 0) {
-    os_current_task_ptr = NULL;
-    kernel.current_task = NULL;
-    kernel.current_node = NULL;
-    return;
+  /* Pop tasks until we find a READY one (skip BLOCKED tasks) */
+  TaskNode *next_node = NULL;
+  while (kernel.ready_heap.size > 0) {
+    next_node = heap_pop();
+    if (next_node && next_node->task.state == TASK_READY) {
+      break;  /* Found a ready task */
+    }
+    /* Task is BLOCKED - don't re-add to heap */
+    next_node = NULL;
   }
 
-  /* Get highest priority ready task */
-  TaskNode *next_node = heap_pop();
   if (next_node) {
     os_current_task_ptr = &next_node->task;
     kernel.current_task = &next_node->task;
     kernel.current_node = next_node;
     kernel.current_task->state = TASK_RUNNING;
-  }
-}
-
-/* Execute current task - inlined for performance */
-static inline void os_run_task(void) __attribute__((always_inline));
-static inline void os_run_task(void) {
-  register TaskControlBlock *task = kernel.current_task;
-  if (task && task->task_func) {
-    task->task_func();
+  } else {
+    os_current_task_ptr = NULL;
+    kernel.current_task = NULL;
+    kernel.current_node = NULL;
   }
 }
 
@@ -400,21 +405,23 @@ static void blocked_queue_add(TaskNode *node, uint16_t ticks) {
   kernel.blocked_queue.count++;
 }
 
-/* Task Delay - O(1) using stored current_node pointer */
+/* Task Delay - FIXED: Use optimized atomic macros */
 void os_delay(uint16_t ticks) {
   if (kernel.current_task && kernel.current_node && ticks > 0) {
-    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-      kernel.current_task->state = TASK_BLOCKED;
-      blocked_queue_add(kernel.current_node, ticks);
-      os_context_switch();
-    }
+    ATOMIC_START();
+    kernel.current_task->state = TASK_BLOCKED;
+    blocked_queue_add(kernel.current_node, ticks);
+    os_context_switch();
+    ATOMIC_END();
   }
 }
 
 /* Task Yield - voluntary context switch */
 void os_task_yield(void) {
   if (kernel.current_task) {
-    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) { os_context_switch(); }
+    ATOMIC_START();
+    os_context_switch();
+    ATOMIC_END();
   }
 }
 
@@ -433,17 +440,22 @@ void *os_malloc(uint16_t size) {
 }
 
 /* Simple Memory Deallocation (no-op in bump allocator) */
-void os_free(void *ptr) { (void)ptr; /* Unused in bump allocator */ }
+void os_free(void *ptr) { 
+  (void)ptr; /* Unused in bump allocator */ 
+}
 
 /* System tick - O(1) delta queue processing */
 void os_system_tick(void) {
   kernel.system_tick++;
 
-  /* Delta queue: only decrement first node */
-  if (kernel.blocked_queue.head == NULL)
+  /* Fast path for empty blocked queue */
+  if (kernel.blocked_queue.count == 0)
     return;
 
-  kernel.blocked_queue.head->task.delta_ticks--;
+  /* Delta queue: only decrement first node */
+  if (kernel.blocked_queue.head->task.delta_ticks > 0) {
+    kernel.blocked_queue.head->task.delta_ticks--;
+  }
 
   /* Unblock all tasks with zero delta */
   while (kernel.blocked_queue.head &&
@@ -455,13 +467,13 @@ void os_system_tick(void) {
     }
     kernel.blocked_queue.count--;
 
-    /* Move to ready queue - now using heap */
+    /* Move to ready heap */
     node->task.state = TASK_READY;
     heap_push(node);
   }
 }
 
-/* Semaphore Implementation */
+/* Semaphore Implementation - FIXED: Trigger context switch when blocking */
 void os_sem_init(Semaphore *sem, uint8_t initial_count) {
   sem->count = initial_count;
   sem->blocked_tasks.head = NULL;
@@ -470,36 +482,35 @@ void os_sem_init(Semaphore *sem, uint8_t initial_count) {
 }
 
 void os_sem_wait(Semaphore *sem) {
-  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-    if (sem->count > 0) {
-      sem->count--;
-    } else {
-      /* Block current task */
-      TaskNode *node = kernel.current_node;
-      if (node) {
-        node->task.state = TASK_BLOCKED;
-        queue_add_tail(&sem->blocked_tasks, node);
-        /* Remove from heap is tricky here, but scheduler will skip it */
-        kernel.current_task = NULL;
-        kernel.current_node = NULL;
-      }
+  ATOMIC_START();
+  if (sem->count > 0) {
+    sem->count--;
+  } else {
+    /* Block current task - FIXED: Add context switch */
+    TaskNode *node = kernel.current_node;
+    if (node) {
+      node->task.state = TASK_BLOCKED;
+      queue_add_tail(&sem->blocked_tasks, node);
+      /* Trigger immediate context switch */
+      os_context_switch();
     }
   }
+  ATOMIC_END();
 }
 
 void os_sem_post(Semaphore *sem) {
-  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-    if (sem->blocked_tasks.count > 0) {
-      TaskNode *node = queue_remove(&sem->blocked_tasks);
-      node->task.state = TASK_READY;
-      heap_push(node);
-    } else {
-      sem->count++;
-    }
+  ATOMIC_START();
+  if (sem->blocked_tasks.count > 0) {
+    TaskNode *node = queue_remove(&sem->blocked_tasks);
+    node->task.state = TASK_READY;
+    heap_push(node);
+  } else {
+    sem->count++;
   }
+  ATOMIC_END();
 }
 
-/* Mutex Implementation */
+/* Mutex Implementation - FIXED: Trigger context switch when blocking */
 void os_mutex_init(Mutex *mutex) {
   mutex->locked = 0;
   mutex->owner = NULL;
@@ -509,34 +520,35 @@ void os_mutex_init(Mutex *mutex) {
 }
 
 void os_mutex_lock(Mutex *mutex) {
-  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-    if (!mutex->locked) {
-      mutex->locked = 1;
-      mutex->owner = kernel.current_task;
-    } else {
-      TaskNode *node = kernel.current_node;
-      if (node) {
-        node->task.state = TASK_BLOCKED;
-        queue_add_tail(&mutex->blocked_tasks, node);
-        kernel.current_task = NULL;
-        kernel.current_node = NULL;
-      }
+  ATOMIC_START();
+  if (!mutex->locked) {
+    mutex->locked = 1;
+    mutex->owner = kernel.current_task;
+  } else {
+    /* Block current task - FIXED: Add context switch */
+    TaskNode *node = kernel.current_node;
+    if (node) {
+      node->task.state = TASK_BLOCKED;
+      queue_add_tail(&mutex->blocked_tasks, node);
+      /* Trigger immediate context switch */
+      os_context_switch();
     }
   }
+  ATOMIC_END();
 }
 
 void os_mutex_unlock(Mutex *mutex) {
-  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-    if (mutex->blocked_tasks.count > 0) {
-      TaskNode *node = queue_remove(&mutex->blocked_tasks);
-      node->task.state = TASK_READY;
-      mutex->owner = &node->task;
-      heap_push(node);
-    } else {
-      mutex->locked = 0;
-      mutex->owner = NULL;
-    }
+  ATOMIC_START();
+  if (mutex->blocked_tasks.count > 0) {
+    TaskNode *node = queue_remove(&mutex->blocked_tasks);
+    node->task.state = TASK_READY;
+    mutex->owner = &node->task;
+    heap_push(node);
+  } else {
+    mutex->locked = 0;
+    mutex->owner = NULL;
   }
+  ATOMIC_END();
 }
 
 /* Message Queue Implementation */
@@ -579,13 +591,76 @@ void *os_mq_receive(MessageQueue *mq) {
   return msg;
 }
 
-/* Stack Overflow & Power Management */
+/* Fast-path message queue operations - OPTIMIZATION #14 */
+void os_mq_send_fast(MessageQueue *mq, void *msg) {
+  ATOMIC_START();
+  
+  /* Check if space available without blocking */
+  if (mq->count < mq->capacity) {
+    /* Fast path - space available, no context switches needed */
+    mq->buffer[mq->tail] = msg;
+    mq->tail = (mq->tail + 1) % mq->capacity;
+    mq->count++;
+    
+    /* Wake one receiver if any are blocked */
+    if (mq->sem_read.blocked_tasks.count > 0) {
+      TaskNode *node = queue_remove(&mq->sem_read.blocked_tasks);
+      node->task.state = TASK_READY;
+      heap_push(node);
+    } else {
+      mq->sem_read.count++;
+    }
+    
+    ATOMIC_END();
+    return;
+  }
+  
+  ATOMIC_END();
+  
+  /* Slow path - must block */
+  os_mq_send(mq, msg);
+}
+
+void *os_mq_receive_fast(MessageQueue *mq) {
+  ATOMIC_START();
+  
+  /* Check if message available without blocking */
+  if (mq->count > 0) {
+    /* Fast path - message available, no context switches needed */
+    void *msg = mq->buffer[mq->head];
+    mq->head = (mq->head + 1) % mq->capacity;
+    mq->count--;
+    
+    /* Wake one sender if any are blocked */
+    if (mq->sem_write.blocked_tasks.count > 0) {
+      TaskNode *node = queue_remove(&mq->sem_write.blocked_tasks);
+      node->task.state = TASK_READY;
+      heap_push(node);
+    } else {
+      mq->sem_write.count++;
+    }
+    
+    ATOMIC_END();
+    return msg;
+  }
+  
+  ATOMIC_END();
+  
+  /* Slow path - must block */
+  return os_mq_receive(mq);
+}
+
+/* Stack Overflow Detection - FIXED: Actual implementation */
 void os_check_stack_overflow(void) {
-  /* Simple placeholder: in a real AVR OS, we'd check for a 'canary' value
-     at the end of the task's stack space. */
-  if (kernel.current_task) {
-    // Check if current stack pointer is dangerously close to heap/other tasks
-    // For now, this is a placeholder for the logic.
+  if (kernel.current_node && kernel.current_node->task.canary_ptr) {
+    if (*(kernel.current_node->task.canary_ptr) != STACK_CANARY) {
+      /* STACK OVERFLOW DETECTED! */
+      cli();
+      /* Halt system - in production, you might log the error */
+      while(1) {
+        /* Could blink LED rapidly here to indicate error */
+      }
+    }
   }
 }
 
@@ -609,8 +684,8 @@ void os_start(void) {
     SPL = sp_val & 0xFF;
     SPH = sp_val >> 8;
 
-    /* Restore context of the first task */
-    asm volatile("pop r31 \n\t"
+    /* Restore context of the first task - FIXED: Matches stack init layout */
+    __asm__ __volatile__("pop r31 \n\t"
                  "pop r30 \n\t"
                  "pop r29 \n\t"
                  "pop r28 \n\t"
@@ -648,6 +723,8 @@ void os_start(void) {
   }
 
   while (1) {
+    /* Check for stack overflow periodically */
+    os_check_stack_overflow();
     os_enter_idle();
   }
 }
