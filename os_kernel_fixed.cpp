@@ -539,10 +539,16 @@ void os_mutex_lock(Mutex *mutex) {
 
 void os_mutex_unlock(Mutex *mutex) {
   ATOMIC_START();
+  // Add a check to ensure only the owner can unlock.
+  if (mutex->owner != kernel.current_task) {
+    ATOMIC_END();
+    return; // Or trigger an assertion
+  }
+
   if (mutex->blocked_tasks.count > 0) {
     TaskNode *node = queue_remove(&mutex->blocked_tasks);
     node->task.state = TASK_READY;
-    mutex->owner = &node->task;
+    mutex->owner = &node->task; // Pass ownership to the next waiting task
     heap_push(node);
   } else {
     mutex->locked = 0;
@@ -672,7 +678,7 @@ void os_enter_idle(void) {
   sleep_disable();
 }
 
-/* Start the OS - infinite loop */
+/* Start the OS - never returns */
 void os_start(void) {
   os_timer_init(); /* Start system tick timer */
 
@@ -722,9 +728,9 @@ void os_start(void) {
                  "ret \n\t" ::"I"(_SFR_IO_ADDR(SREG)));
   }
 
-  while (1) {
-    /* Check for stack overflow periodically */
-    os_check_stack_overflow();
-    os_enter_idle();
+  /* This part should never be reached. If it is, it means no tasks were created.
+   * We'll hang here. A watchdog timer could catch this. */
+  while(1) {
+      // System halted: No tasks to run.
   }
 }

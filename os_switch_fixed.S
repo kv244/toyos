@@ -49,12 +49,10 @@ os_context_switch:
     push r31
 
     ; Save current SP to os_current_task_ptr->stack_ptr
-    ; FIXED: Use constant from toyos.h instead of hardcoded offset
+    ; No null check needed here, as context switch implies a current task.
     lds r26, os_current_task_ptr
     lds r27, os_current_task_ptr + 1
-    sbiw r26, 0
-    breq .pick_next
-
+    
     ; Add offset to reach stack_ptr field
     adiw r26, TCB_STACK_PTR_OFFSET
     in r0, _SFR_IO_ADDR(SPL)

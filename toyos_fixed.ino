@@ -100,12 +100,26 @@ void task_led_b(void) {
   }
 }
 
+/* Task 5: Idle Task (Lowest Priority)
+ * Runs when no other task is ready.
+ * Performs system health checks and enters low-power mode.
+ */
+void task_idle(void) {
+  while (1) {
+    /* Periodically check for stack overflows in other tasks */
+    os_check_stack_overflow();
+    
+    /* Enter low-power mode until the next interrupt (e.g., tick) */
+    os_enter_idle();
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   while (!Serial)
     ;
 
-  Serial.println(F("ToyOS V2.1 - FIXED & OPTIMIZED"));
+  Serial.println(F("ToyOS V2.2 - FIXED & OPTIMIZED"));
   Serial.println(F("================================"));
   Serial.println(F("Fixes:"));
   Serial.println(F("- Stack corruption fix"));
@@ -114,6 +128,9 @@ void setup() {
   Serial.println(F("- Memory leak prevention"));
   Serial.println(F("- Stack overflow detection"));
   Serial.println(F("- uint32_t system tick"));
+  Serial.println(F("- Correct mutex ownership validation"));
+  Serial.println(F("\nImprovements:"));
+  Serial.println(F("- Dedicated idle task for system health"));
   Serial.println(F("\nOptimizations:"));
   Serial.println(F("- Fast message queue operations"));
   Serial.println(F("- Direct port manipulation"));
@@ -138,6 +155,7 @@ void setup() {
   os_create_task(5, task_consumer, 5, 128);   /* Medium priority */
   os_create_task(1, task_led_a, 1, 96);       /* Low priority - reduced stack */
   os_create_task(2, task_led_b, 1, 96);       /* Low priority - reduced stack */
+  os_create_task(0, task_idle, 0, 64);        /* Idle task, lowest priority */
 
   Serial.println(F("Starting Pre-emptive Scheduler..."));
   Serial.print(F("Free memory: "));
