@@ -1,6 +1,5 @@
 #include "kv_db.h"
 #include <Arduino.h>
-#include <stdio.h>
 #include <string.h>
 #include <toyos.h>
 

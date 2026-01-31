@@ -282,7 +282,7 @@ kv_result_t kv_write(const char *key, const char *value, uint16_t val_len) {
   header.key_len = key_len;
   header.val_len = val_len;
   header.flags = 0;
-  header.crc = kv_hal_crc32(key, key_len); // Basic CRC for now
+  header.crc = kv_hal_crc32(key, key_len); // Platform-optimized CRC (HW/SW)
 
   storage_write(addr, &header, sizeof(KVRecord));
   storage_write(addr + sizeof(KVRecord), key, key_len);
