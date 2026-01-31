@@ -714,42 +714,35 @@ void os_delay(uint16_t ticks);
 /**
  * Allocate memory from system pool.
  *
- * Simple bump allocator - memory is allocated sequentially.
- * Memory cannot be freed (use os_free() is a no-op).
+ * Implements a First-Fit Free List Allocator.
+ * - Searches for the first free block large enough to satisfy the request.
+ * - Splits larger blocks to minimize internal fragmentation.
  *
  * @param size Number of bytes to allocate
  * @return Pointer to allocated memory, or NULL if out of memory
  *
  * Alignment: Automatically aligned to 2-byte boundary
+ * Overhead: sizeof(BlockHeader) per allocation
  *
  * Use cases:
- * - Task stack allocation (done automatically by os_create_task)
- * - Message queue buffers (done by os_mq_create)
- * - Fixed-lifetime data structures
+ * - Dynamic data structures
+ * - Temporary buffers
+ * - Task stacks and queues
  *
- * @warning Memory is never freed! Use sparingly.
- * @warning Do not allocate after all tasks are created
- *
- * Example:
- *   uint16_t *buffer = (uint16_t*)os_malloc(100 * sizeof(uint16_t));
- *   if (buffer == NULL) {
- *     // Out of memory!
- *   }
+ * @note Replaces the legacy bump allocator.
  */
 void *os_malloc(uint16_t size);
 
 /**
- * Free memory (no-op in current implementation).
+ * Free previously allocated memory.
  *
- * Included for API completeness.
- * Current bump allocator does not support deallocation.
+ * Returns the memory block to the free list and coalesces adjacent
+ * free blocks to reduce external fragmentation.
  *
- * @param ptr Pointer to memory (ignored)
+ * @param ptr Pointer to memory returned by os_malloc()
  *
- * For true dynamic allocation, consider implementing:
- * - Memory pools per task
- * - Best-fit or first-fit allocator with free list
- * - Garbage collection
+ * @note Safe to call with NULL.
+ * @note Complexity: O(n) where n is number of free blocks
  */
 void os_free(void *ptr);
 
