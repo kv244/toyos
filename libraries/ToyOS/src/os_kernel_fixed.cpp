@@ -62,6 +62,14 @@ void os_init(uint8_t *mem_pool, uint16_t mem_size) {
   /* Initialize task pool dynamically to reduce global footprint */
   if (task_pool == NULL) {
     task_pool = (TaskNode *)os_malloc(sizeof(TaskNode) * MAX_TASKS);
+    if (task_pool == NULL) {
+      /* Fatal error - system cannot operate without task pool */
+#ifdef ARDUINO
+      Serial.println(F("FATAL: Task pool allocation failed"));
+      while (1)
+        ; // Halt system
+#endif
+    }
   }
 
   /* Reset task pool index */

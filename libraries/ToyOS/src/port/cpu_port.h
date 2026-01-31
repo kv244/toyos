@@ -19,6 +19,11 @@ extern "C" {
  * AVR (ATmega328P) SECTION
  * ======================================================================== */
 #if defined(__AVR__)
+
+/* External state variables (defined in port_avr.c) */
+extern volatile uint8_t port_critical_nesting;
+extern volatile uint8_t port_saved_sreg;
+
 #include <avr/interrupt.h>
 #include <avr/io.h>
 #include <avr/sleep.h>
@@ -87,6 +92,14 @@ static inline bool cpu_atomic_cas_u8(volatile uint8_t *ptr, uint8_t exp,
  * ARM CORTEX-M SECTION
  * ======================================================================== */
 #elif defined(__arm__) || defined(__ARM_ARCH) || defined(ARDUINO_ARCH_RENESAS)
+
+/* External state variables (defined in port_arm.c) */
+extern volatile uint32_t critical_nesting;
+
+/* ARM Cortex-M System Control Block - Interrupt Control and State Register */
+#define SCB_ICSR_ADDR 0xE000ED04UL
+#define SCB_ICSR_PENDSVSET (1UL << 28)
+
 #include <Arduino.h>
 
 #define cpu_enable_interrupts() __enable_irq()
@@ -114,7 +127,7 @@ static inline void *cpu_get_sp(void) {
 
 #define cpu_yield()                                                            \
   do {                                                                         \
-    (*(volatile uint32_t *)0xE000ED04) = (1UL << 28);                          \
+    (*(volatile uint32_t *)SCB_ICSR_ADDR) = SCB_ICSR_PENDSVSET;                \
     __asm volatile("dsb" ::: "memory");                                        \
     __asm volatile("isb" ::: "memory");                                        \
   } while (0)
