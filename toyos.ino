@@ -3,10 +3,8 @@
 
 static uint8_t mem_pool[1024] __attribute__((aligned(2)));
 
-Mutex led_mutex;
 Mutex serial_mutex;
 MessageQueue *sensor_mq;
-volatile int shared_data = 0;
 
 #define LED_PIN 13
 #define LED_DDR DDRB
@@ -142,7 +140,6 @@ void setup() {
   os_init(mem_pool, sizeof(mem_pool));
   Serial.println(F("OS Init: OK"));
 
-  os_mutex_init(&led_mutex);
   os_mutex_init(&serial_mutex);
   os_sem_init(&led_sem, 0); /* Init semaphore with 0 count (locked) */
 
