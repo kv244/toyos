@@ -79,9 +79,18 @@ void task_high(void) {
 }
 
 void task_idle(void) {
+  static uint16_t idle_count = 0;
   while (1) {
     os_wdt_feed();
     os_check_stack_overflow();
+
+    if (++idle_count >= 1000) {
+      os_mutex_lock(&serial_mutex);
+      Serial.println(F("[IDLE] System free."));
+      os_mutex_unlock(&serial_mutex);
+      idle_count = 0;
+    }
+
     os_enter_idle();
   }
 }
