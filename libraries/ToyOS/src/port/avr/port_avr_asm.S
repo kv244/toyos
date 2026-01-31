@@ -1,7 +1,6 @@
 #if defined(__AVR__)
 #include <avr/io.h>
 .set TCB_STACK_PTR_OFFSET, 0
-.set SREG_I_BIT, 0x80
 
 .global port_context_switch
 .global port_fast_zero_stack

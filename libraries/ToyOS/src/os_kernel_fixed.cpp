@@ -366,13 +366,26 @@ void os_create_task(uint8_t id, void (*task_func)(void), uint8_t priority,
 }
 
 /* Priority-Based Scheduler - FIXED: Skip blocked tasks */
-void os_scheduler(void) {
+TOYOS_HOT void os_scheduler(void) {
   /* Activity Heartbeat (optional debug) - Removed for portability */
   // PINB |= (1 << 5);
 
   /* Put current task back in the ready heap ONLY if it's ready/running */
   if (kernel.current_node && (kernel.current_task->state == TASK_RUNNING ||
                               kernel.current_task->state == TASK_READY)) {
+
+    /* Optimization: If current task is higher priority than anyone in heap,
+     * keep running */
+    if (kernel.ready_heap.size > 0 &&
+        kernel.current_task->priority >
+            kernel.ready_heap.nodes[0]->task.priority) {
+      return;
+    }
+    /* Optimization: If heap is empty, keep running */
+    if (kernel.ready_heap.size == 0) {
+      return;
+    }
+
     kernel.current_task->state = TASK_READY;
     heap_push(kernel.current_node);
   }

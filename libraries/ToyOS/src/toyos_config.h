@@ -404,4 +404,22 @@
 #define TOYOS_TICKS_TO_MS(ticks)                                               \
   ((uint32_t)((ticks) * 1000 / TOYOS_TICK_RATE_HZ))
 
+/* ========================================================================
+ * COMPILER OPTIMIZATION MACROS
+ * ======================================================================== */
+
+#ifndef TOYOS_NORETURN
+#if defined(__GNUC__) || defined(__clang__)
+#define TOYOS_NORETURN __attribute__((noreturn))
+#define TOYOS_HOT __attribute__((hot))
+#define TOYOS_COLD __attribute__((cold))
+#define TOYOS_ALWAYS_INLINE __attribute__((always_inline)) inline
+#else
+#define TOYOS_NORETURN
+#define TOYOS_HOT
+#define TOYOS_COLD
+#define TOYOS_ALWAYS_INLINE inline
+#endif
+#endif
+
 #endif /* TOYOS_CONFIG_H */

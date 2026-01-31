@@ -73,42 +73,69 @@ typedef enum {
 } kv_result_t;
 
 /**
- * Initialize the KV database.
- * Loads the sorted index from EEPROM or creates a new one.
+ * @brief Initialize the Key-Value database.
+ *
+ * Loads the sorted index from persistent storage into RAM.
+ * If no valid database is found, formats the storage area.
+ *
+ * @return kv_result_t KV_SUCCESS on success, error code otherwise
  */
 kv_result_t kv_init(void);
 
 /**
- * Write a key-value pair to the database.
+ * @brief Write a key-value pair to the database.
+ *
  * If the key already exists, updates the index to point to a new record.
  * The old record is marked as free but space is not immediately reclaimed.
+ *
+ * @param key Null-terminated key string (max KV_MAX_KEY_LEN)
+ * @param value Pointer to value data
+ * @param val_len Length of value data in bytes
+ * @return kv_result_t KV_SUCCESS or error code
  */
 kv_result_t kv_write(const char *key, const char *value, uint16_t val_len);
 
 /**
- * Read the value associated with a key.
- * buffer must be at least val_len specified in kv_write (or KV_MAX_VAL_LEN).
+ * @brief Read the value associated with a key.
+ *
+ * @param key Null-terminated key string to search for
+ * @param buffer Output buffer to store the value
+ * @param max_len Size of the output buffer
+ * @param actual_len [out] Pointer to store actual value length (optional, can
+ * be NULL)
+ * @return kv_result_t KV_SUCCESS or error code
  */
 kv_result_t kv_read(const char *key, char *buffer, uint16_t max_len,
                     uint16_t *actual_len);
 
 /**
- * Delete a key from the database.
+ * @brief Delete a key from the database.
+ *
  * Removes the entry from the sorted index.
- * The EEPROM space is not reclaimed until kv_compact() or kv_clear() is called.
+ * The EEPROM space is not reclaimed until kv_compact() is called.
+ *
+ * @param key Null-terminated key string to delete
+ * @return kv_result_t KV_SUCCESS or error code
  */
 kv_result_t kv_delete(const char *key);
 
 /**
- * Compact the database to reclaim EEPROM space.
- * Copies all live entries to fresh EEPROM blocks starting from
- * KV_RECORDS_OFFSET. This reclaims space from deleted or updated entries.
- * Returns the number of bytes reclaimed, or negative error code.
+ * @brief Compact the database to reclaim free space.
+ *
+ * Moves active records to contiguous memory and updates the index.
+ * Only writes to EEPROM/Flash if moving is necessary to save write cycles.
+ *
+ * @return int16_t Number of bytes reclaimed, or negative error code
  */
 int16_t kv_compact(void);
 
 /**
- * Utility to clear the entire database.
+ * @brief Clear the entire database.
+ *
+ * Resets the header and clears the index. Data records are not explicitly
+ * erased but become inaccessible and will be overwritten.
+ *
+ * @return kv_result_t KV_SUCCESS or error code
  */
 kv_result_t kv_clear(void);
 

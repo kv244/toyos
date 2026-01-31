@@ -90,12 +90,6 @@ extern "C" {
  * ======================================================================== */
 
 /**
- * SREG (Status Register) interrupt enable bit.
- * Bit 7 (I-bit) must be set to enable interrupts.
- */
-#define SREG_I_BIT 0x80
-
-/**
  * Timer1 prescaler configuration.
  * Calculated from TOYOS_TIMER_PRESCALER in toyos_config.h
  */
