@@ -63,6 +63,22 @@ static int compare_keys_flash(const char *key1, uint32_t addr2) {
   return strcmp(key1, key2);
 }
 
+static void get_key_entry(int idx, char *key_buf) {
+#ifdef KV_HAL_ARM
+  strcpy(key_buf, index_cache->entries[idx].cached_key);
+#else
+  read_key_from_flash(index_cache->entries[idx].addr, key_buf);
+#endif
+}
+
+static int compare_keys_entry(const char *key1, int idx) {
+#if defined(KV_HAL_ARM)
+  return strcmp(key1, index_cache->entries[idx].cached_key);
+#else
+  return compare_keys_flash(key1, index_cache->entries[idx].addr);
+#endif
+}
+
 /* Binary Search in RAM Index */
 static int16_t index_search(const char *key) {
   int16_t left = 0;
@@ -70,7 +86,7 @@ static int16_t index_search(const char *key) {
 
   while (left <= right) {
     int16_t mid = left + (right - left) / 2;
-    int cmp = compare_keys_flash(key, index_cache->entries[mid].addr);
+    int cmp = compare_keys_entry(key, mid);
     if (cmp == 0)
       return mid;
     if (cmp < 0)
@@ -94,11 +110,14 @@ static void index_update(const char *key, uint32_t addr) {
       /* Find insertion spot */
       int i;
       for (i = index_cache->count - 1; i >= 0; i--) {
-        if (compare_keys_flash(key, index_cache->entries[i].addr) > 0)
+        if (compare_keys_entry(key, i) > 0)
           break;
         index_cache->entries[i + 1] = index_cache->entries[i];
       }
       index_cache->entries[i + 1].addr = (uint16_t)addr;
+#ifdef KV_HAL_ARM
+      strcpy(index_cache->entries[i + 1].cached_key, key);
+#endif
       index_cache->count++;
     }
   }
@@ -347,10 +366,7 @@ kv_result_t kv_iterate(const char *prefix, kv_iter_cb_t cb, void *ctx) {
 
   while (left < right) {
     int16_t mid = left + (right - left) / 2;
-    char key_buf[KV_MAX_KEY_LEN + 1];
-    read_key_from_flash(index_cache->entries[mid].addr, key_buf);
-
-    if (strcmp(key_buf, prefix) < 0) {
+    if (compare_keys_entry(prefix, mid) > 0) {
       left = mid + 1;
     } else {
       right = mid;
@@ -361,7 +377,7 @@ kv_result_t kv_iterate(const char *prefix, kv_iter_cb_t cb, void *ctx) {
 
   for (int i = left; i < index_cache->count; i++) {
     char key_buf[KV_MAX_KEY_LEN + 1];
-    read_key_from_flash(index_cache->entries[i].addr, key_buf);
+    get_key_entry(i, key_buf);
 
     if (strncmp(key_buf, prefix, prefix_len) != 0) {
       break;
@@ -371,12 +387,22 @@ kv_result_t kv_iterate(const char *prefix, kv_iter_cb_t cb, void *ctx) {
     KVRecord rec;
     storage_read(addr, &rec, sizeof(KVRecord));
 
-    void *val_buf = os_malloc(rec.val_len + 1);
+    uint8_t stack_buf[32];
+    void *val_buf = NULL;
+    bool using_stack = (rec.val_len < sizeof(stack_buf));
+
+    if (using_stack) {
+      val_buf = stack_buf;
+    } else {
+      val_buf = os_malloc(rec.val_len + 1);
+    }
+
     if (val_buf) {
       storage_read(addr + sizeof(KVRecord) + rec.key_len, val_buf, rec.val_len);
-      ((char *)val_buf)[rec.val_len] = '\0'; // Ensure null term if string?
+      ((char *)val_buf)[rec.val_len] = '\0';
       cb(key_buf, val_buf, rec.val_len, ctx);
-      os_free(val_buf);
+      if (!using_stack)
+        os_free(val_buf);
     }
   }
 

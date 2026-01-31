@@ -269,7 +269,14 @@ void *k_malloc(size_t size) {
     uint16_t size;
     struct BlockHeader *next;
   } BlockHeader;
-  size = (size + 1) & ~1; // Align
+
+#ifdef __arm__
+#define TOYOS_MEM_ALIGN_MASK 0x7
+#else
+#define TOYOS_MEM_ALIGN_MASK 0x1
+#endif
+
+  size = (size + TOYOS_MEM_ALIGN_MASK) & ~TOYOS_MEM_ALIGN_MASK;
   uint16_t total_size = size + sizeof(BlockHeader);
 
   port_enter_critical();

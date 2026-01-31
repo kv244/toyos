@@ -3,7 +3,11 @@
 #include <kv_db.h>
 #include <toyos.h>
 
+#ifdef __arm__
+static uint8_t mem_pool[8192] __attribute__((aligned(8)));
+#else
 static uint8_t mem_pool[896] __attribute__((aligned(2)));
+#endif
 
 Mutex serial_mutex;
 

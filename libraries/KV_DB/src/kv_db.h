@@ -54,6 +54,9 @@ typedef struct KV_ALIGN {
  */
 typedef struct KV_ALIGN {
   uint16_t addr; // Address of valid record
+#if defined(KV_HAL_ARM)
+  char cached_key[KV_MAX_KEY_LEN + 1];
+#endif
 } KV_PACKED IndexEntry;
 
 /**
