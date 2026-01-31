@@ -1,3 +1,4 @@
+#if defined(__AVR__)
 #include <avr/io.h>
 .set TCB_STACK_PTR_OFFSET, 0
 .set SREG_I_BIT, 0x80
@@ -198,3 +199,5 @@ port_fast_zero_stack:
 .done:
     movw r24, r30        ; Return new sp in r24:r25
     ret
+
+#endif /* __AVR__ */

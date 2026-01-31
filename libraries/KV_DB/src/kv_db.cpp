@@ -24,7 +24,7 @@ static void read_key_from_record(uint16_t addr, char *key_buffer) {
 
   uint8_t read_len =
       (header.key_len > KV_MAX_KEY_LEN) ? KV_MAX_KEY_LEN : header.key_len;
-  storage_read(key_buffer, addr + sizeof(KVRecord), read_len);
+  storage_read(addr + sizeof(KVRecord), key_buffer, read_len);
   key_buffer[read_len] = '\0';
 }
 

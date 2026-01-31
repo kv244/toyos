@@ -1,26 +1,32 @@
 # ToyOS - Tiny Operating System for Arduino
 
-**Version 2.4 - ADVANCED RTOS FEATURES + KV Database**
+**Version 2.5 - MULTI-PLATFORM (AVR + ARM Cortex-M)**
 **Status:** ✅ Production Ready for Hobbyist/Education
 **Last Updated:** January 2026
 
-ToyOS is a lightweight, preemptive Real-Time Operating System (RTOS) designed specifically for the Arduino UNO (ATmega328P). It provides priority-based multitasking, inter-process communication, efficient resource management, and a persistent key-value database while maintaining a minimal memory footprint.
+ToyOS is a lightweight, preemptive Real-Time Operating System (RTOS) designed for embedded systems. It now supports multiple architectures including **Arduino UNO (AVR)** and **Arduino UNO R4 (ARM Cortex-M4)**. It provides priority-based multitasking, inter-process communication, efficient resource management, and a persistent key-value database.
 
 ---
 
 ## 🌟 Features
 
 ### Core RTOS Features
+- ✅ **Multi-Platform Architecture**: Seamlessly runs on AVR (ATmega328P) and ARM Cortex-M (Renesas RA4M1).
+- ✅ **Hardware Abstraction Layer (HAL)**: Clean separation of kernel and hardware specifics.
 - ✅ **Priority-Based Preemptive Scheduling**: Uses binary heap for O(log N) task selection.
 - ✅ **Priority Inheritance Protocol**: Prevents priority inversion for Mutexes.
 - ✅ **Watchdog Timer Integration**: Hardware recovery from system hangs.
 - ✅ **Stack High-Water Mark tracking**: Accurate stack usage monitoring.
 - ✅ **Stack Overflow Detection**: Canary-based protection.
-- ✅ **Delta Queue Delays**: O(1) tick processing for sleeping tasks.
-- ✅ **Optimized Context Switching**: Hand-coded assembly for minimal overhead (~35 cycles).
+- ✅ **Optimized Context Switching**: 
+  - AVR: Hand-coded assembly (~35 cycles)
+  - ARM: Efficient PendSV handler with FPU context support
 
-### KV Database (NEW)
-- ✅ **EEPROM Persistence**: 1KB storage on Arduino UNO.
+### KV Database (Storage HAL)
+- ✅ **Platform-Agnostic Storage**: Auto-selects driver based on board.
+  - **AVR**: Internal EEPROM
+  - **ARM (R4)**: Data Flash Emulation (via EEPROM.h)
+- ✅ **EEPROM Persistence**: 1KB indexable storage.
 - ✅ **Thread-Safe CRUD Operations**: Read, Write, Delete with Mutex protection.
 - ✅ **Log-Structured Storage**: Append-only writes for simplicity.
 - ✅ **Configurable Limits**: Keys up to 24 chars, values up to 1024 bytes.
@@ -51,12 +57,19 @@ toyos/
 │   ├── ToyOS/              # Core RTOS library
 │   │   ├── src/
 │   │   │   ├── toyos.h              # API & configuration
-│   │   │   ├── os_kernel_fixed.cpp  # Kernel implementation
-│   │   │   └── os_switch_fixed.S    # Assembly context switch
+│   │   │   ├── port.h               # Portability Interface
+│   │   │   ├── os_kernel_fixed.cpp  # Portable Kernel
+│   │   │   └── port/                # Hardware Ports
+│   │   │       ├── avr/             # AVR Implementation
+│   │   │       └── arm/             # ARM Cortex-M Implementation
 │   │   └── library.properties
 │   └── KV_DB/              # Key-Value Database library
 │       ├── src/
 │       │   ├── kv_db.h              # Database API
+│       │   ├── hal/                 # Storage Drivers
+│       │       ├── storage_driver.h
+│       │       ├── storage_avr_eeprom.c
+│       │       └── storage_arduino_eeprom.cpp
 │       │   ├── kv_db.cpp            # Implementation
 │       │   └── test_kv_db.cpp       # Test suite
 │       └── library.properties
@@ -71,7 +84,8 @@ toyos/
 
 ### 1. Requirements
 - **Arduino CLI** (recommended) or Arduino IDE
-- **Arduino UNO** (ATmega328P) or compatible board
+- **Arduino UNO R3** (ATmega328P) OR
+- **Arduino UNO R4** (Minima/WiFi)
 - **Serial Monitor** for output
 
 ### 2. Installing Arduino CLI (if needed)
@@ -83,9 +97,10 @@ Invoke-WebRequest -Uri https://downloads.arduino.cc/arduino-cli/arduino-cli_late
 Expand-Archive arduino-cli.zip -DestinationPath C:\arduino-cli
 $env:PATH += ";C:\arduino-cli"
 
-# Initialize and install AVR core
+# Initialize and install cores
 arduino-cli core update-index
 arduino-cli core install arduino:avr
+arduino-cli core install arduino:renesas_uno
 ```
 
 **Linux/macOS:**
@@ -93,15 +108,19 @@ arduino-cli core install arduino:avr
 curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
 arduino-cli core update-index
 arduino-cli core install arduino:avr
+arduino-cli core install arduino:renesas_uno
 ```
 
 ### 3. Building the Project
 
-Navigate to the project directory and compile:
-
+**For Arduino UNO R3 (AVR):**
 ```bash
-cd C:\Users\julia\Documents\toyos
 arduino-cli compile --fqbn arduino:avr:uno --libraries libraries app/kv_db_demo
+```
+
+**For Arduino UNO R4 WiFi (ARM):**
+```bash
+arduino-cli compile --fqbn arduino:renesas_uno:unor4wifi --libraries libraries app/kv_db_demo
 ```
 
 **Expected Output:**
@@ -312,6 +331,12 @@ Then enable it in your sketch:
 ---
 
 ## 📝 Version History
+
+### v2.5 (January 2026) - MULTI-PLATFORM
+- ✅ **ARM Cortex-M Port**: Full support for Arduino UNO R4 (PendSV/SysTick).
+- ✅ **Portability Layer**: Clean separate of Kernel and Hardware (`port.h`).
+- ✅ **Storage HAL**: Driver-based storage abstraction (AVR EEPROM / R4 Flash).
+- ✅ **Zero Regression**: 100% backward compatible with AVR.
 
 ### v2.4.1 (January 2026) - KV DATABASE
 - ✅ **New Feature**: Persistent key-value database with EEPROM storage

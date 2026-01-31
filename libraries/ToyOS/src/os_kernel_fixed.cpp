@@ -1,6 +1,5 @@
 #include "port.h"
 #include "toyos.h"
-#include <util/atomic.h>
 
 #ifdef ARDUINO
 #include <Arduino.h>
@@ -333,8 +332,8 @@ void os_create_task(uint8_t id, void (*task_func)(void), uint8_t priority,
 
 /* Priority-Based Scheduler - FIXED: Skip blocked tasks */
 void os_scheduler(void) {
-  /* Activity Heartbeat: Toggle Pin 13 on every scheduling decision */
-  PINB |= (1 << 5);
+  /* Activity Heartbeat (optional debug) - Removed for portability */
+  // PINB |= (1 << 5);
 
   /* Put current task back in the ready heap ONLY if it's ready/running */
   if (kernel.current_node && (kernel.current_task->state == TASK_RUNNING ||
@@ -416,7 +415,7 @@ void os_delay(uint16_t ticks) {
     ATOMIC_START();
     kernel.current_task->state = TASK_BLOCKED;
     blocked_queue_add(kernel.current_node, ticks);
-    os_context_switch();
+    port_context_switch();
     ATOMIC_END();
   }
 }
@@ -425,7 +424,7 @@ void os_delay(uint16_t ticks) {
 void os_task_yield(void) {
   if (kernel.current_task) {
     ATOMIC_START();
-    os_context_switch();
+    port_context_switch();
     ATOMIC_END();
   }
 }
@@ -480,7 +479,7 @@ void os_sem_wait(Semaphore *sem) {
       node->task.state = TASK_BLOCKED;
       queue_add_tail(&sem->blocked_tasks, node);
       /* Trigger immediate context switch */
-      os_context_switch();
+      port_context_switch();
     }
   }
   ATOMIC_END();
@@ -528,7 +527,7 @@ void os_mutex_lock(Mutex *mutex) {
       node->task.state = TASK_BLOCKED;
       queue_add_tail(&mutex->blocked_tasks, node);
       /* Trigger immediate context switch */
-      os_context_switch();
+      port_context_switch();
     }
   }
   ATOMIC_END();
@@ -679,7 +678,7 @@ void os_check_stack_overflow(void) {
   if (kernel.current_node && kernel.current_node->task.canary_ptr) {
     if (*(kernel.current_node->task.canary_ptr) != STACK_CANARY) {
       /* STACK OVERFLOW DETECTED! */
-      cli();
+      port_disable_interrupts();
       /* Halt system - in production, you might log the error */
       while (1) {
         /* Could blink LED rapidly here to indicate error */
@@ -688,21 +687,12 @@ void os_check_stack_overflow(void) {
   }
 }
 
-void os_enter_idle(void) {
-  set_sleep_mode(SLEEP_MODE_IDLE);
-  sleep_enable();
-  sei();
-  sleep_cpu();
-  sleep_disable();
-}
+void os_enter_idle(void) { port_enter_idle(); }
 
 /* Watchdog Timer Support */
-void os_wdt_init(uint8_t timeout) {
-  /* timeout: WDTO_15MS, WDTO_1S, WDTO_2S, etc (from avr/wdt.h) */
-  wdt_enable(timeout);
-}
+void os_wdt_init(uint16_t timeout_ms) { port_wdt_init(timeout_ms); }
 
-void os_wdt_feed(void) { wdt_reset(); }
+void os_wdt_feed(void) { port_wdt_feed(); }
 
 /* Stack High-Water Mark Tracking */
 uint16_t os_get_stack_usage(uint8_t task_id) {

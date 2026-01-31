@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include <avr/wdt.h>
+
 #include <kv_db.h>
 #include <toyos.h>
 

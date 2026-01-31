@@ -19,10 +19,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /* ========================================================================
  * PLATFORM DETECTION
  * ======================================================================== */
@@ -76,6 +72,10 @@ extern "C" {
 #include "port/arm/port_arm.h"
 #else
 #error "No port implementation for selected platform"
+#endif
+
+#ifdef __cplusplus
+extern "C" {
 #endif
 
 /* ========================================================================

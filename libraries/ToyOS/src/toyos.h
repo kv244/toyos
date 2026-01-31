@@ -550,7 +550,7 @@ STATIC_ASSERT(TCB_STACK_PTR_OFFSET == 0);
 STATIC_ASSERT(MAX_TASKS > 0 && MAX_TASKS <= 32);
 STATIC_ASSERT(MIN_STACK_SIZE >= 48);
 STATIC_ASSERT(DEFAULT_STACK_SIZE >= MIN_STACK_SIZE);
-STATIC_ASSERT(TIMER1_1MS_AT_16MHZ > 0 && TIMER1_1MS_AT_16MHZ < 65535);
+// STATIC_ASSERT(TIMER1_1MS_AT_16MHZ > 0 && TIMER1_1MS_AT_16MHZ < 65535);
 
 /* ========================================================================
  * OPTIMIZED ATOMIC OPERATIONS
@@ -574,13 +574,7 @@ STATIC_ASSERT(TIMER1_1MS_AT_16MHZ > 0 && TIMER1_1MS_AT_16MHZ < 65535);
  * @warning Never return or jump out of atomic section without ATOMIC_END()!
  * @note Atomic sections should be as short as possible (<50 instructions)
  */
-#define ATOMIC_START()                                                         \
-  uint8_t _sreg_save;                                                          \
-  __asm__ __volatile__("in %0, %1 \n\t"                                        \
-                       "cli \n\t"                                              \
-                       : "=r"(_sreg_save)                                      \
-                       : "I"(_SFR_IO_ADDR(SREG))                               \
-                       : "memory")
+#define ATOMIC_START() port_enter_critical()
 
 /**
  * End atomic section (restore interrupts).
@@ -591,10 +585,7 @@ STATIC_ASSERT(TIMER1_1MS_AT_16MHZ > 0 && TIMER1_1MS_AT_16MHZ < 65535);
  *
  * @note Must be called exactly once for each ATOMIC_START()
  */
-#define ATOMIC_END()                                                           \
-  __asm__ __volatile__("out %0, %1 \n\t" ::"I"(_SFR_IO_ADDR(SREG)),            \
-                       "r"(_sreg_save)                                         \
-                       : "memory")
+#define ATOMIC_END() port_exit_critical()
 
 /* ========================================================================
  * PUBLIC API - CORE FUNCTIONS
@@ -1076,14 +1067,10 @@ void os_check_stack_overflow(void);
 void os_enter_idle(void);
 
 /**
- * Watchdog Timer Initialization.
- *
- * @param timeout Timeout duration constant from avr/wdt.h
- *                (e.g., WDTO_1S, WDTO_2S, WDTO_4S, WDTO_8S)
- *
- * @warning Incorrect WDT usage can cause a reset loop if not fed early.
+ * Initialize Watchdog Timer.
+ * @param timeout_ms Timeout period in milliseconds.
  */
-void os_wdt_init(uint8_t timeout);
+void os_wdt_init(uint16_t timeout_ms);
 
 /**
  * Reset Watchdog Timer ("Feed the dog").

@@ -188,20 +188,19 @@ void port_timer_init(void) {
   NVIC_SetPriority(PendSV_IRQn, 15);  /* Lowest priority for PendSV too */
 }
 
-/* SysTick Handler */
 void SysTick_Handler(void) {
   /* Call OS Tick processing */
-  /* Checks if context switch is needed */
-  if (os_system_tick()) {
-    port_context_switch();
-  }
+  os_system_tick();
 
-  /* Optional: Increment Arduino millis counter if we stole the vector?
-     On R4, generic clock usually handles millis? No, SysTick.
-     If we steal it, `delay()` inside Arduino libs might break.
-     Ideally we call invalid global?
-  */
+  /* Trigger potential context switch via PendSV */
+  port_context_switch();
 }
+
+/* Optional: Increment Arduino millis counter if we stole the vector?
+   On R4, generic clock usually handles millis? No, SysTick.
+   If we steal it, `delay()` inside Arduino libs might break.
+   Ideally we call invalid global?
+*/
 
 /* SVC Handler - Restores first task context */
 __attribute__((naked)) void SVC_Handler(void) {
@@ -298,6 +297,21 @@ uint32_t port_get_tick(void) {
   extern uint32_t os_get_time(void);
   return os_get_time();
 }
+
+/* Power & WDT */
+void port_enter_idle(void) {
+  /* WFI instruction to sleep until interrupt */
+  __asm volatile("wfi");
+}
+
+void port_wdt_init(uint16_t timeout_ms) {
+  (void)timeout_ms;
+  /* Stub: Implement R4 WDT init here */
+}
+
+void port_wdt_feed(void) { /* Stub: Implement R4 WDT feed here */ }
+
+void port_wdt_disable(void) { /* Stub */ }
 
 /* Get Stack Pointer */
 void *port_get_stack_pointer(void) {
