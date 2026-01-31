@@ -29,15 +29,15 @@ static inline TaskNode *get_task_node(void) {
 }
 
 /* Task Stack Initialization - FIXED: Proper stack layout for context restore */
-static uint8_t *os_init_stack(uint16_t stack_size, void (*task_func)(void), 
-                               uint32_t **canary_ptr_out) {
+static uint8_t *os_init_stack(uint16_t stack_size, void (*task_func)(void),
+                              uint32_t **canary_ptr_out) {
   uint8_t *stack = (uint8_t *)os_malloc(stack_size);
   if (!stack)
     return NULL;
 
   /* Place canary at bottom of stack for overflow detection */
-  *(uint32_t*)stack = STACK_CANARY;
-  *canary_ptr_out = (uint32_t*)stack;
+  *(uint32_t *)stack = STACK_CANARY;
+  *canary_ptr_out = (uint32_t *)stack;
 
   /* Point to the end of stack (AVR stack grows down) */
   uint8_t *sp = stack + stack_size - 1;
@@ -50,17 +50,19 @@ static uint8_t *os_init_stack(uint16_t stack_size, void (*task_func)(void),
    * - R1 (zero register)
    * - R2-R31 (general purpose registers)
    */
-  
-  uint16_t func_addr = (uint16_t)(uintptr_t)task_func;
-  *sp-- = (func_addr >> 8) & 0xFF; /* PC High byte */
-  *sp-- = func_addr & 0xFF;        /* PC Low byte */
-  *sp-- = 0x00;                    /* R0 (temp for SREG) */
-  *sp-- = SREG_I_BIT;              /* SREG (I bit set) */
-  *sp-- = 0x00;                    /* R1 (zero register) */
 
-  /* R2-R31: Use assembly helper for efficiency */
-  fast_zero_stack(sp, 30);
-  sp -= 30;
+  uint16_t func_addr = (uint16_t)(uintptr_t)task_func;
+  *sp-- = func_addr & 0xFF; /* PC Low byte - Pushed FIRST (Highest Addr) */
+  *sp-- =
+      (func_addr >> 8) & 0xFF; /* PC High byte - Pushed SECOND (Lower Addr) */
+  *sp-- = 0x00;                /* R0 (actual register value) */
+  *sp-- = SREG_I_BIT;          /* SREG (I bit set) */
+  *sp-- = 0x00;                /* R1 (zero register) */
+
+  /* R2-R31: Zero out */
+  for (int i = 0; i < 30; i++) {
+    *sp-- = 0x00;
+  }
 
   return sp;
 }
@@ -139,48 +141,46 @@ void os_timer_init(void) {
 
   /* Enable Timer1 compare match A interrupt */
   TIMSK1 = (1 << OCIE1A);
-
-  sei(); /* Enable interrupts */
 }
 
 /* Timer1 Compare Match A ISR - Naked for custom context switch */
 ISR(TIMER1_COMPA_vect, ISR_NAKED) {
   /* Save Context */
   __asm__ __volatile__("push r0 \n\t"
-               "in r0, %0 \n\t"
-               "push r0 \n\t"
-               "push r1 \n\t"
-               "clr r1 \n\t"
-               "push r2 \n\t"
-               "push r3 \n\t"
-               "push r4 \n\t"
-               "push r5 \n\t"
-               "push r6 \n\t"
-               "push r7 \n\t"
-               "push r8 \n\t"
-               "push r9 \n\t"
-               "push r10 \n\t"
-               "push r11 \n\t"
-               "push r12 \n\t"
-               "push r13 \n\t"
-               "push r14 \n\t"
-               "push r15 \n\t"
-               "push r16 \n\t"
-               "push r17 \n\t"
-               "push r18 \n\t"
-               "push r19 \n\t"
-               "push r20 \n\t"
-               "push r21 \n\t"
-               "push r22 \n\t"
-               "push r23 \n\t"
-               "push r24 \n\t"
-               "push r25 \n\t"
-               "push r26 \n\t"
-               "push r27 \n\t"
-               "push r28 \n\t"
-               "push r29 \n\t"
-               "push r30 \n\t"
-               "push r31 \n\t" ::"I"(_SFR_IO_ADDR(SREG)));
+                       "in r0, %0 \n\t"
+                       "push r0 \n\t"
+                       "push r1 \n\t"
+                       "clr r1 \n\t"
+                       "push r2 \n\t"
+                       "push r3 \n\t"
+                       "push r4 \n\t"
+                       "push r5 \n\t"
+                       "push r6 \n\t"
+                       "push r7 \n\t"
+                       "push r8 \n\t"
+                       "push r9 \n\t"
+                       "push r10 \n\t"
+                       "push r11 \n\t"
+                       "push r12 \n\t"
+                       "push r13 \n\t"
+                       "push r14 \n\t"
+                       "push r15 \n\t"
+                       "push r16 \n\t"
+                       "push r17 \n\t"
+                       "push r18 \n\t"
+                       "push r19 \n\t"
+                       "push r20 \n\t"
+                       "push r21 \n\t"
+                       "push r22 \n\t"
+                       "push r23 \n\t"
+                       "push r24 \n\t"
+                       "push r25 \n\t"
+                       "push r26 \n\t"
+                       "push r27 \n\t"
+                       "push r28 \n\t"
+                       "push r29 \n\t"
+                       "push r30 \n\t"
+                       "push r31 \n\t" ::"I"(_SFR_IO_ADDR(SREG)));
 
   /* Save current SP to TCB */
   if (os_current_task_ptr) {
@@ -191,8 +191,10 @@ ISR(TIMER1_COMPA_vect, ISR_NAKED) {
   /* Call OS tick */
   os_system_tick();
 
-  /* Call Scheduler to pick next task */
-  os_scheduler();
+  /* Call Scheduler to pick next task - ONLY if we started the OS */
+  if (kernel.task_count > 0) {
+    os_scheduler();
+  }
 
   /* Load new SP from TCB */
   if (os_current_task_ptr) {
@@ -203,48 +205,46 @@ ISR(TIMER1_COMPA_vect, ISR_NAKED) {
 
   /* Restore Context */
   __asm__ __volatile__("pop r31 \n\t"
-               "pop r30 \n\t"
-               "pop r29 \n\t"
-               "pop r28 \n\t"
-               "pop r27 \n\t"
-               "pop r26 \n\t"
-               "pop r25 \n\t"
-               "pop r24 \n\t"
-               "pop r23 \n\t"
-               "pop r22 \n\t"
-               "pop r21 \n\t"
-               "pop r20 \n\t"
-               "pop r19 \n\t"
-               "pop r18 \n\t"
-               "pop r17 \n\t"
-               "pop r16 \n\t"
-               "pop r15 \n\t"
-               "pop r14 \n\t"
-               "pop r13 \n\t"
-               "pop r12 \n\t"
-               "pop r11 \n\t"
-               "pop r10 \n\t"
-               "pop r9 \n\t"
-               "pop r8 \n\t"
-               "pop r7 \n\t"
-               "pop r6 \n\t"
-               "pop r5 \n\t"
-               "pop r4 \n\t"
-               "pop r3 \n\t"
-               "pop r2 \n\t"
-               "pop r1 \n\t"
-               "pop r0 \n\t"
-               "out %0, r0 \n\t"
-               "pop r0 \n\t"
-               "reti \n\t" ::"I"(_SFR_IO_ADDR(SREG)));
+                       "pop r30 \n\t"
+                       "pop r29 \n\t"
+                       "pop r28 \n\t"
+                       "pop r27 \n\t"
+                       "pop r26 \n\t"
+                       "pop r25 \n\t"
+                       "pop r24 \n\t"
+                       "pop r23 \n\t"
+                       "pop r22 \n\t"
+                       "pop r21 \n\t"
+                       "pop r20 \n\t"
+                       "pop r19 \n\t"
+                       "pop r18 \n\t"
+                       "pop r17 \n\t"
+                       "pop r16 \n\t"
+                       "pop r15 \n\t"
+                       "pop r14 \n\t"
+                       "pop r13 \n\t"
+                       "pop r12 \n\t"
+                       "pop r11 \n\t"
+                       "pop r10 \n\t"
+                       "pop r9 \n\t"
+                       "pop r8 \n\t"
+                       "pop r7 \n\t"
+                       "pop r6 \n\t"
+                       "pop r5 \n\t"
+                       "pop r4 \n\t"
+                       "pop r3 \n\t"
+                       "pop r2 \n\t"
+                       "pop r1 \n\t"
+                       "pop r0 \n\t"
+                       "out %0, r0 \n\t"
+                       "pop r0 \n\t"
+                       "reti \n\t" ::"I"(_SFR_IO_ADDR(SREG)));
 }
 
 /* Get current tick count - atomic read for uint32_t */
 uint32_t os_get_tick(void) {
   uint32_t tick;
-  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) { 
-    tick = kernel.system_tick; 
-  }
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) { tick = kernel.system_tick; }
   return tick;
 }
 
@@ -289,7 +289,7 @@ void os_create_task(uint8_t id, void (*task_func)(void), uint8_t priority,
   /* Validate parameters */
   ASSERT(task_func != NULL);
   ASSERT(stack_size >= MIN_STACK_SIZE);
-  
+
   if (kernel.task_count >= MAX_TASKS)
     return;
 
@@ -331,9 +331,8 @@ void os_create_task(uint8_t id, void (*task_func)(void), uint8_t priority,
 /* Priority-Based Scheduler - FIXED: Skip blocked tasks */
 void os_scheduler(void) {
   /* Put current task back in the ready heap ONLY if it's ready/running */
-  if (kernel.current_node && 
-      (kernel.current_task->state == TASK_RUNNING ||
-       kernel.current_task->state == TASK_READY)) {
+  if (kernel.current_node && (kernel.current_task->state == TASK_RUNNING ||
+                              kernel.current_task->state == TASK_READY)) {
     kernel.current_task->state = TASK_READY;
     heap_push(kernel.current_node);
   }
@@ -343,7 +342,7 @@ void os_scheduler(void) {
   while (kernel.ready_heap.size > 0) {
     next_node = heap_pop();
     if (next_node && next_node->task.state == TASK_READY) {
-      break;  /* Found a ready task */
+      break; /* Found a ready task */
     }
     /* Task is BLOCKED - don't re-add to heap */
     next_node = NULL;
@@ -440,9 +439,7 @@ void *os_malloc(uint16_t size) {
 }
 
 /* Simple Memory Deallocation (no-op in bump allocator) */
-void os_free(void *ptr) { 
-  (void)ptr; /* Unused in bump allocator */ 
-}
+void os_free(void *ptr) { (void)ptr; /* Unused in bump allocator */ }
 
 /* System tick - O(1) delta queue processing */
 void os_system_tick(void) {
@@ -600,19 +597,22 @@ void *os_mq_receive(MessageQueue *mq) {
 /* Fast-path message queue operations - OPTIMIZATION #14 - FIXED */
 void os_mq_send_fast(MessageQueue *mq, void *msg) {
   ATOMIC_START();
-  
+
   /* Check if space available without blocking */
-  /* We use mq->count for quick check, but we MUST keep semaphores in sync */
-  if (mq->count < mq->capacity) {
+  /* Check if space available without blocking */
+  /* CRITICAL FIX: Must ensure no tasks are blocked on the semaphore! */
+  /* DISABLE FAST PATH FOR DEBUGGING */
+  if (mq->sem_write.count > 0 && !mq->mutex.locked) {
     /* Fast path - space available, no context switches needed */
-    
-    /* CRITICAL FIX: We are effectively doing a non-blocking wait on sem_write */
-    mq->sem_write.count--; 
-    
+
+    /* CRITICAL FIX: We are effectively doing a non-blocking wait on sem_write
+     */
+    mq->sem_write.count--;
+
     mq->buffer[mq->tail] = msg;
     mq->tail = (mq->tail + 1) % mq->capacity;
     mq->count++;
-    
+
     /* Wake one receiver if any are blocked */
     if (mq->sem_read.blocked_tasks.count > 0) {
       TaskNode *node = queue_remove(&mq->sem_read.blocked_tasks);
@@ -621,31 +621,33 @@ void os_mq_send_fast(MessageQueue *mq, void *msg) {
     } else {
       mq->sem_read.count++;
     }
-    
+
     ATOMIC_END();
     return;
   }
-  
+
   ATOMIC_END();
-  
+
   /* Slow path - must block */
   os_mq_send(mq, msg);
 }
 
 void *os_mq_receive_fast(MessageQueue *mq) {
   ATOMIC_START();
-  
+
   /* Check if message available without blocking */
-  if (mq->count > 0) {
+  /* CRITICAL FIX: Must ensure no tasks are blocked on the semaphore! */
+  /* DISABLE FAST PATH FOR DEBUGGING */
+  if (mq->sem_read.count > 0 && !mq->mutex.locked) {
     /* Fast path - message available, no context switches needed */
-    
+
     /* CRITICAL FIX: We are effectively doing a non-blocking wait on sem_read */
     mq->sem_read.count--;
 
     void *msg = mq->buffer[mq->head];
     mq->head = (mq->head + 1) % mq->capacity;
     mq->count--;
-    
+
     /* Wake one sender if any are blocked */
     if (mq->sem_write.blocked_tasks.count > 0) {
       TaskNode *node = queue_remove(&mq->sem_write.blocked_tasks);
@@ -654,13 +656,13 @@ void *os_mq_receive_fast(MessageQueue *mq) {
     } else {
       mq->sem_write.count++;
     }
-    
+
     ATOMIC_END();
     return msg;
   }
-  
+
   ATOMIC_END();
-  
+
   /* Slow path - must block */
   return os_mq_receive(mq);
 }
@@ -672,7 +674,7 @@ void os_check_stack_overflow(void) {
       /* STACK OVERFLOW DETECTED! */
       cli();
       /* Halt system - in production, you might log the error */
-      while(1) {
+      while (1) {
         /* Could blink LED rapidly here to indicate error */
       }
     }
@@ -689,6 +691,7 @@ void os_enter_idle(void) {
 
 /* Start the OS - never returns */
 void os_start(void) {
+  cli();           /* Disable interrupts to prevent corruption */
   os_timer_init(); /* Start system tick timer */
 
   /* Initial context switch - pick the first task and start it */
@@ -701,45 +704,45 @@ void os_start(void) {
 
     /* Restore context of the first task - FIXED: Matches stack init layout */
     __asm__ __volatile__("pop r31 \n\t"
-                 "pop r30 \n\t"
-                 "pop r29 \n\t"
-                 "pop r28 \n\t"
-                 "pop r27 \n\t"
-                 "pop r26 \n\t"
-                 "pop r25 \n\t"
-                 "pop r24 \n\t"
-                 "pop r23 \n\t"
-                 "pop r22 \n\t"
-                 "pop r21 \n\t"
-                 "pop r20 \n\t"
-                 "pop r19 \n\t"
-                 "pop r18 \n\t"
-                 "pop r17 \n\t"
-                 "pop r16 \n\t"
-                 "pop r15 \n\t"
-                 "pop r14 \n\t"
-                 "pop r13 \n\t"
-                 "pop r12 \n\t"
-                 "pop r11 \n\t"
-                 "pop r10 \n\t"
-                 "pop r9 \n\t"
-                 "pop r8 \n\t"
-                 "pop r7 \n\t"
-                 "pop r6 \n\t"
-                 "pop r5 \n\t"
-                 "pop r4 \n\t"
-                 "pop r3 \n\t"
-                 "pop r2 \n\t"
-                 "pop r1 \n\t"
-                 "pop r0 \n\t"
-                 "out %0, r0 \n\t"
-                 "pop r0 \n\t"
-                 "ret \n\t" ::"I"(_SFR_IO_ADDR(SREG)));
+                         "pop r30 \n\t"
+                         "pop r29 \n\t"
+                         "pop r28 \n\t"
+                         "pop r27 \n\t"
+                         "pop r26 \n\t"
+                         "pop r25 \n\t"
+                         "pop r24 \n\t"
+                         "pop r23 \n\t"
+                         "pop r22 \n\t"
+                         "pop r21 \n\t"
+                         "pop r20 \n\t"
+                         "pop r19 \n\t"
+                         "pop r18 \n\t"
+                         "pop r17 \n\t"
+                         "pop r16 \n\t"
+                         "pop r15 \n\t"
+                         "pop r14 \n\t"
+                         "pop r13 \n\t"
+                         "pop r12 \n\t"
+                         "pop r11 \n\t"
+                         "pop r10 \n\t"
+                         "pop r9 \n\t"
+                         "pop r8 \n\t"
+                         "pop r7 \n\t"
+                         "pop r6 \n\t"
+                         "pop r5 \n\t"
+                         "pop r4 \n\t"
+                         "pop r3 \n\t"
+                         "pop r2 \n\t"
+                         "pop r1 \n\t"
+                         "pop r0 \n\t"
+                         "out %0, r0 \n\t"
+                         "pop r0 \n\t"
+                         "ret \n\t" ::"I"(_SFR_IO_ADDR(SREG)));
   }
 
-  /* This part should never be reached. If it is, it means no tasks were created.
-   * We'll hang here. A watchdog timer could catch this. */
-  while(1) {
-      // System halted: No tasks to run.
+  /* This part should never be reached. If it is, it means no tasks were
+   * created. We'll hang here. A watchdog timer could catch this. */
+  while (1) {
+    // System halted: No tasks to run.
   }
 }

@@ -1,180 +1,113 @@
 #include "toyos.h"
 #include <Arduino.h>
 
-/* Memory pool for OS (1KB) */
-static uint8_t mem_pool[1024];
+static uint8_t mem_pool[600];
 
-/* Shared resources */
 Mutex led_mutex;
-Mutex serial_mutex; /* Protects Serial output */
+Mutex serial_mutex;
 MessageQueue *sensor_mq;
-
-/* Global state for display */
 volatile int shared_data = 0;
 
-/* LED Pin - Direct port manipulation for performance (OPTIMIZATION #11) */
 #define LED_PIN 13
 #define LED_DDR DDRB
 #define LED_PORT PORTB
-#define LED_BIT PB5  /* Pin 13 on Arduino UNO */
-
-/* Fast LED macros - saves ~50 CPU cycles per call */
-#define LED_ON()  (LED_PORT |= (1 << LED_BIT))
+#define LED_BIT PB5
+#define LED_ON() (LED_PORT |= (1 << LED_BIT))
 #define LED_OFF() (LED_PORT &= ~(1 << LED_BIT))
-#define LED_TOGGLE() (LED_PORT ^= (1 << LED_BIT))
 
-/* Task 1: Sensor Producer (High Priority)
- * Periodically reads a sensor and sends data to a queue.
- */
 void task_producer(void) {
-  static int count = 0;
+  int counter = 0;
   while (1) {
-    int val = analogRead(A0);
-
-    /* Simulate some processing */
-    count++;
-
-    /* Use fast message queue - fewer context switches (OPTIMIZATION #14) */
-    os_mq_send_fast(sensor_mq, (void *)(uintptr_t)val);
-
-    os_mutex_lock(&serial_mutex);
-    Serial.print(F("[Producer] Sent: "));
-    Serial.println(val);
-    os_mutex_unlock(&serial_mutex);
-
-    os_delay(1000); /* Read every 1 second */
+    /* Send counter value as a pointer (cast) - USING FAST PATH */
+    os_mq_send_fast(sensor_mq, (void *)(uintptr_t)counter);
+    Serial.print(F("Prod Sent: "));
+    Serial.println(counter);
+    counter++;
+    os_delay(1000);
   }
 }
 
-/* Task 2: Data Consumer (Medium Priority)
- * Waits for data and prints it.
- */
-void task_consumer(void) {
+void task_consumer_1(void) {
   while (1) {
-    /* Use fast message queue - fewer context switches (OPTIMIZATION #14) */
     void *msg = os_mq_receive_fast(sensor_mq);
     int val = (int)(uintptr_t)msg;
-
-    os_mutex_lock(&serial_mutex);
-    Serial.print(F("[Consumer] Processed: "));
+    Serial.print(F("Cons1 Got (Fast): "));
     Serial.println(val);
-    os_mutex_unlock(&serial_mutex);
-
-    /* Access shared resource using Mutex */
-    os_mutex_lock(&led_mutex);
-    shared_data = val;
-    os_mutex_unlock(&led_mutex);
-  }
-}
-
-/* Task 3: Mutex Competition task A (Low Priority)
- * Tries to toggle LED - uses direct port manipulation
- */
-void task_led_a(void) {
-  while (1) {
-    os_mutex_lock(&led_mutex);
-    
-    os_mutex_lock(&serial_mutex);
-    Serial.println(F("Task A has LED Mutex"));
-    os_mutex_unlock(&serial_mutex);
-    
-    /* Direct port manipulation - much faster than digitalWrite() */
-    LED_ON();
-    os_delay(200);
-    LED_OFF();
-    
-    os_mutex_unlock(&led_mutex);
-
+    /* Simulate work */
     os_delay(500);
   }
 }
 
-/* Task 4: Mutex Competition task B (Low Priority)
- * Tries to toggle LED - uses direct port manipulation
- */
+void task_consumer_2(void) {
+  while (1) {
+    void *msg = os_mq_receive_fast(sensor_mq);
+    int val = (int)(uintptr_t)msg;
+    Serial.print(F("Cons2 Got (Fast): "));
+    Serial.println(val);
+    /* Simulate work */
+    os_delay(500);
+  }
+}
+
+void task_led_a(void) {
+  while (1) {
+    LED_ON();
+    os_delay(200);
+    LED_OFF();
+    os_delay(500);
+  }
+}
+
 void task_led_b(void) {
   while (1) {
-    os_mutex_lock(&led_mutex);
-    
-    os_mutex_lock(&serial_mutex);
-    Serial.println(F("Task B has LED Mutex"));
-    os_mutex_unlock(&serial_mutex);
-    
-    /* Direct port manipulation - much faster than digitalWrite() */
     LED_ON();
     os_delay(100);
     LED_OFF();
-    
-    os_mutex_unlock(&led_mutex);
-
     os_delay(300);
   }
 }
 
-/* Task 5: Idle Task (Lowest Priority)
- * Runs when no other task is ready.
- * Performs system health checks and enters low-power mode.
- */
 void task_idle(void) {
   while (1) {
-    /* Periodically check for stack overflows in other tasks */
     os_check_stack_overflow();
-    
-    /* Enter low-power mode until the next interrupt (e.g., tick) */
     os_enter_idle();
   }
 }
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(9600);
   while (!Serial)
     ;
 
-  Serial.println(F("ToyOS V2.2 - FIXED & OPTIMIZED"));
+  Serial.println(F("ToyOS V2.2 - Multi-Consumer Demo (FAST MQ)"));
   Serial.println(F("================================"));
-  Serial.println(F("Fixes:"));
-  Serial.println(F("- Stack corruption fix"));
-  Serial.println(F("- Semaphore/mutex context switch fix"));
-  Serial.println(F("- Scheduler blocked task handling"));
-  Serial.println(F("- Memory leak prevention"));
-  Serial.println(F("- Stack overflow detection"));
-  Serial.println(F("- uint32_t system tick"));
-  Serial.println(F("- Correct mutex ownership validation"));
-  Serial.println(F("\nImprovements:"));
-  Serial.println(F("- Dedicated idle task for system health"));
-  Serial.println(F("\nOptimizations:"));
-  Serial.println(F("- Fast message queue operations"));
-  Serial.println(F("- Direct port manipulation"));
-  Serial.println(F("- Assembly stack zeroing"));
-  Serial.println(F("- Optimized atomic operations"));
-  Serial.println();
+  Serial.flush();
 
   /* Configure LED pin using direct register access */
-  LED_DDR |= (1 << LED_BIT);  /* Set as output */
-  LED_OFF();                   /* Start with LED off */
+  LED_DDR |= (1 << LED_BIT);
+  LED_OFF();
 
   /* Initialize OS and primitives */
   os_init(mem_pool, sizeof(mem_pool));
   os_mutex_init(&led_mutex);
   os_mutex_init(&serial_mutex);
-  sensor_mq = os_mq_create(5); /* Capacity of 5 messages */
+  sensor_mq = os_mq_create(5);
 
-  /* Create tasks:
-   */
-  os_create_task(10, task_producer, 10, 192); /* Highest priority - Increased Stack */
-  os_create_task(5, task_consumer, 5, 192);   /* Medium priority - Increased Stack */
-  os_create_task(1, task_led_a, 1, 160);       /* Low priority - Increased Stack */
-  os_create_task(2, task_led_b, 1, 160);       /* Low priority - Increased Stack */
-  os_create_task(0, task_idle, 0, 96);        /* Idle task - Increased Stack */
+  /* Create tasks */
+  os_create_task(10, task_producer, 10, 100);
+  os_create_task(2, task_consumer_1, 5, 100);
+  os_create_task(3, task_consumer_2, 5, 100);
+  os_create_task(1, task_led_a, 1, 80);
+  os_create_task(1, task_led_b, 1, 80);
+  os_create_task(0, task_idle, 0, 64);
 
   Serial.println(F("Starting Pre-emptive Scheduler..."));
-  Serial.print(F("Free memory: "));
-  Serial.print(1024 - ((uint16_t)&mem_pool[1024] - (uint16_t)mem_pool));
-  Serial.println(F(" bytes"));
-  
+  Serial.flush();
   os_start();
+
+  while (1) {
+    // Should never reach here
+  }
 }
 
-void loop() {
-  /* Never reached - OS takes over */
-}
+void loop() {}
