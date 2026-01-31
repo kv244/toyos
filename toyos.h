@@ -14,7 +14,7 @@
  * - Optimized context switching in assembly
  *
  * Author: [Your Name]
- * Version: 2.1
+ * Version: 2.3
  * Date: January 2026
  */
 
@@ -300,21 +300,20 @@ typedef struct {
  * ======================================================================== */
 
 /**
- * Simple bump allocator for memory management.
+ * First-Fit Free List allocator for memory management.
  *
- * Memory is allocated sequentially from a fixed pool.
- * Once allocated, memory cannot be freed (no fragmentation).
+ * Memory is allocated from a fixed pool using a linked list of free blocks.
+ * Supports deallocation via os_free() with coalescing of adjacent free blocks.
  *
  * Suitable for:
- * - Task stack allocation (never freed)
- * - System data structures (never freed)
- * - Fixed-size allocations
+ * - Dynamic task and queue creation/destruction
+ * - Temporary buffers and variable-lifetime objects
+ * - System data structures
  *
- * Not suitable for:
- * - Dynamic allocation/deallocation
- * - Variable-lifetime objects
- *
- * Alternative: Implement per-task memory pools for dynamic allocation.
+ * Design:
+ * - First-fit search strategy
+ * - Alignment-aware (2-byte boundary)
+ * - Coalescing to mitigate external fragmentation
  */
 typedef struct {
   void *free_list_head; /**< Pointer to the first block in the free list */

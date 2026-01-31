@@ -694,9 +694,7 @@ void os_mq_send_fast(MessageQueue *mq, void *msg) {
   ATOMIC_START();
 
   /* Check if space available without blocking */
-  /* Check if space available without blocking */
   /* CRITICAL FIX: Must ensure no tasks are blocked on the semaphore! */
-  /* DISABLE FAST PATH FOR DEBUGGING */
   if (mq->sem_write.count > 0 && !mq->mutex.locked) {
     /* Fast path - space available, no context switches needed */
 
@@ -732,7 +730,6 @@ void *os_mq_receive_fast(MessageQueue *mq) {
 
   /* Check if message available without blocking */
   /* CRITICAL FIX: Must ensure no tasks are blocked on the semaphore! */
-  /* DISABLE FAST PATH FOR DEBUGGING */
   if (mq->sem_read.count > 0 && !mq->mutex.locked) {
     /* Fast path - message available, no context switches needed */
 
