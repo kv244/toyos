@@ -85,54 +85,17 @@ uint8_t *port_init_stack(uint8_t *stack_top, uint16_t stack_size,
 /**
  * Start First Task
  */
-__attribute__((naked)) void port_start_first_task(uint8_t *task_stack_ptr) {
-  __asm volatile(
-      "msr psp, r0 \n" /* R0 contains task_stack_ptr */
-      "mov r0, #2 \n"  /* Use PSP stack (CONTROL bit 1) */
-      "msr control, r0 \n"
-      "isb \n"
-
-      /* Pop software context (R4-R11) manually */
-      "pop {r4-r11} \n"
-
-      /* Pop hardware context (exception return) */
-      "pop {r0-r3, r12, r14} \n" /* Pop R0-R3, R12, LR */
-      "pop {r0, r1} \n"          /* Pop PC, xPSR */
-      /* Wait, can't pop PC/xPSR directly comfortably in standard exception
-         return. Actually, we are simulating a return from exception. Or just
-         jump to PC? If we use "pop", execution continues.
-
-         Better strategy for first task on M4:
-         Set PSP to stack top.
-         Trigger SVC or just jump?
-
-         Simplest:
-         Init PSP.
-         Pop SW context.
-         Example freeRTOS style:
-         "ldmia r0!, {r4-r11}"
-         "msr psp, r0"
-         "mov r0, #0"
-         "msr basepri, r0"
-         "orr r14, #0xd"
-         "bx r14"
-      */
-
-      /* Revised Start First Task */
-      "ldr r0, =os_current_task_ptr \n"
-      "ldr r1, [r0] \n"
-      "ldr r0, [r1] \n" /* r0 = stack_ptr */
-
-      "ldmia r0!, {r4-r11} \n" /* Pop SW context */
-      "msr psp, r0 \n"         /* Update PSP */
-      "mov r0, #2 \n"          /* Switch to PSP */
-      "msr control, r0 \n"
-      "isb \n"
-
-      /* Exception return */
-      "ldr r14, =0xFFFFFFFD \n" // Return to Thread mode, PSP
-      "bx r14 \n"
-      ".align 4 \n");
+/**
+ * Start First Task
+ * Triggers SVC to switch to handler mode and restore first context.
+ */
+void port_start_first_task(uint8_t *task_stack_ptr) {
+  (void)task_stack_ptr;
+  __asm volatile(" cpsie i \n" /* Enable interrupts globally */
+                 " svc 0 \n"   /* Supervisor Call to restore context */
+                 " nop \n");
+  while (1)
+    ; /* Should not be reached */
 }
 
 /**
@@ -240,7 +203,25 @@ void SysTick_Handler(void) {
   */
 }
 
-void SVC_Handler(void) { port_start_first_task(NULL); }
+/* SVC Handler - Restores first task context */
+__attribute__((naked)) void SVC_Handler(void) {
+  __asm volatile("ldr r0, =os_current_task_ptr \n"
+                 "ldr r1, [r0] \n"
+                 "ldr r0, [r1] \n" /* r0 = stack_ptr from TCB */
+
+                 "ldmia r0!, {r4-r11} \n" /* Pop SW context (R4-R11) */
+                 "msr psp, r0 \n"         /* Set PSP to current SP */
+                 "mov r0, #2 \n" /* Set CONTROL: Use PSP, Unprivileged? (or
+                                    Privileged Thread) */
+                 /* Bit 1=1 (PSP), Bit 0=0 (Privileged) usually */
+                 /* For Arduino R4/M4, we run Privileged Thread usually. */
+                 "msr control, r0 \n"
+                 "isb \n"
+
+                 "orr r14, #0xd \n" /* Force EXC_RETURN to Thread Mode, PSP */
+                 "bx r14 \n" /* Returns -> pops HW frame from PSP -> Task PC */
+                 ".align 4 \n");
+}
 
 /* Platform Info */
 const char *port_get_platform_name(void) { return "ARM Cortex-M4 (Renesas)"; }
