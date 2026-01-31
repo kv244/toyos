@@ -30,13 +30,20 @@ ToyOS is a lightweight, preemptive Real-Time Operating System (RTOS) designed fo
   - ARM: Efficient PendSV handler with FPU context support
 
 ### KV Database (Storage HAL)
-- ✅ **Platform-Agnostic Storage**: Auto-selects driver based on board.
-  - **AVR**: Internal EEPROM with Binary Search (O(log N)).
-  - **ARM (R4)**: Data Flash Emulation with **Shadow Index Hash Table (O(1))**.
-- ✅ **Hardware Acceleration**: Uses RA4M1 Hardware CRC32 engine for data integrity on ARM.
-- ✅ **EEPROM Persistence**: Thread-safe persistent storage.
-- ✅ **Full CRUD + Compaction**: Supported on all platforms with automated space reclamation.
-- ✅ **Comprehensive Test Suite**: Unit, edge-case, concurrency, and compaction tests.
+- ✅ **Log-Structured File System (LFS)**: Sector-based circular log for **Wear Leveling**.
+- ✅ **Hierarchical Namespaces**: Support for structured keys (e.g., `config/net/ssid`) with **Prefix Iteration**.
+- ✅ **RAM-Based Indexing**: Fast O(log N) binary search for lookups and iterations.
+- ✅ **Platform-Agnostic Storage**: Auto-selects driver (AVR EEPROM / ARM Data Flash).
+- ✅ **Data Integrity**: Magic numbers and CRC placeholders for robustness.
+- ✅ **Thread-Safe**: Fully protected by OS primitives.
+
+### Security & Reliability
+- ✅ **True MPU Isolation (ARM)**:
+  - **Privilege Separation**: Kernel runs Privileged, Tasks run Unprivileged.
+  - **System Call Interface (SVC)**: User tasks access kernel services via secure gates.
+  - **Memory Protection**: Hardware-enforced barriers for Kernel Code/Data and Task Stacks.
+- ✅ **Stack Protection**: Guard regions and Canary detection.
+- ✅ **Watchdog Timer**: Hardware recovery.
 
 ### Synchronization Primitives
 - ✅ **Semaphores**: Counting semaphores for resource coordination.
