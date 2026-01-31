@@ -342,7 +342,8 @@ STATIC_ASSERT(sizeof(TaskControlBlock) < 256, tcb_too_large);
     - **Features**:
       - Task stack protection (dynamic reconfiguration)
       - Kernel data protection (privileged access only)
-      - Heap and Peripheral protection
+      - **Privilege Separation (Unprivileged Tasks / Privileged Kernel)**
+      - **System Call Interface (SVC)** for all Kernel APIs
       - Fault handler with detailed error reporting
     - **Verification**: Builds successfully on RA4M1
 

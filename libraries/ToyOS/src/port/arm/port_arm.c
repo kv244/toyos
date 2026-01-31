@@ -225,24 +225,55 @@ void SysTick_Handler(void) {
    Ideally we call invalid global?
 */
 
-/* SVC Handler - Restores first task context */
+/* SVC Handler - Main Entry Point */
 __attribute__((naked)) void SVC_Handler(void) {
+  __asm volatile("tst lr, #4 \n" // Check bit 4 of EXC_RETURN (0=MSP, 1=PSP)
+                 "ite eq \n"
+                 "mrseq r0, msp \n"         // r0 = MSP
+                 "mrsne r0, psp \n"         // r0 = PSP (usually this for tasks)
+                 "b os_svc_dispatch_asm \n" // Jump to C dispatcher
+  );
+}
+
+/* Restore Context for SVC #0 */
+__attribute__((naked)) void port_svc_restore_context(void) {
   __asm volatile("ldr r0, =os_current_task_ptr \n"
                  "ldr r1, [r0] \n"
                  "ldr r0, [r1] \n" /* r0 = stack_ptr from TCB */
 
                  "ldmia r0!, {r4-r11} \n" /* Pop SW context (R4-R11) */
                  "msr psp, r0 \n"         /* Set PSP to current SP */
-                 "mov r0, #2 \n" /* Set CONTROL: Use PSP, Unprivileged? (or
-                                    Privileged Thread) */
-                 /* Bit 1=1 (PSP), Bit 0=0 (Privileged) usually */
-                 /* For Arduino R4/M4, we run Privileged Thread usually. */
+#if TOYOS_USE_MPU
+                 "mov r0, #3 \n" /* Set CONTROL: Use PSP, Unprivileged Thread */
+#else
+                 "mov r0, #2 \n" /* Set CONTROL: Use PSP, Privileged Thread */
+#endif
                  "msr control, r0 \n"
                  "isb \n"
 
                  "orr r14, #0xd \n" /* Force EXC_RETURN to Thread Mode, PSP */
                  "bx r14 \n" /* Returns -> pops HW frame from PSP -> Task PC */
                  ".align 4 \n");
+}
+
+/* C Dispatcher called from SVC_Handler */
+void os_svc_dispatch_asm(uint32_t *stack_frame) {
+  /* Stack frame[6] is PC. SVC instruction is at PC-2. */
+  uint8_t svc_number = ((uint8_t *)stack_frame[6])[-2];
+
+  if (svc_number == 0) {
+    /* Restore First Task */
+    port_svc_restore_context();
+  } else {
+    /* System Call Dispatch */
+    extern uint32_t os_kernel_syscall(uint8_t id, uint32_t arg0, uint32_t arg1,
+                                      uint32_t arg2, uint32_t arg3);
+
+    /* Return value overrides R0 in the stack frame */
+    stack_frame[0] =
+        os_kernel_syscall(svc_number, stack_frame[0], stack_frame[1],
+                          stack_frame[2], stack_frame[3]);
+  }
 }
 
 /* Platform Info */
