@@ -597,13 +597,18 @@ void *os_mq_receive(MessageQueue *mq) {
   return msg;
 }
 
-/* Fast-path message queue operations - OPTIMIZATION #14 */
+/* Fast-path message queue operations - OPTIMIZATION #14 - FIXED */
 void os_mq_send_fast(MessageQueue *mq, void *msg) {
   ATOMIC_START();
   
   /* Check if space available without blocking */
+  /* We use mq->count for quick check, but we MUST keep semaphores in sync */
   if (mq->count < mq->capacity) {
     /* Fast path - space available, no context switches needed */
+    
+    /* CRITICAL FIX: We are effectively doing a non-blocking wait on sem_write */
+    mq->sem_write.count--; 
+    
     mq->buffer[mq->tail] = msg;
     mq->tail = (mq->tail + 1) % mq->capacity;
     mq->count++;
@@ -633,6 +638,10 @@ void *os_mq_receive_fast(MessageQueue *mq) {
   /* Check if message available without blocking */
   if (mq->count > 0) {
     /* Fast path - message available, no context switches needed */
+    
+    /* CRITICAL FIX: We are effectively doing a non-blocking wait on sem_read */
+    mq->sem_read.count--;
+
     void *msg = mq->buffer[mq->head];
     mq->head = (mq->head + 1) % mq->capacity;
     mq->count--;

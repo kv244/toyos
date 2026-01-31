@@ -6,6 +6,7 @@ static uint8_t mem_pool[1024];
 
 /* Shared resources */
 Mutex led_mutex;
+Mutex serial_mutex; /* Protects Serial output */
 MessageQueue *sensor_mq;
 
 /* Global state for display */
@@ -36,8 +37,10 @@ void task_producer(void) {
     /* Use fast message queue - fewer context switches (OPTIMIZATION #14) */
     os_mq_send_fast(sensor_mq, (void *)(uintptr_t)val);
 
+    os_mutex_lock(&serial_mutex);
     Serial.print(F("[Producer] Sent: "));
     Serial.println(val);
+    os_mutex_unlock(&serial_mutex);
 
     os_delay(1000); /* Read every 1 second */
   }
@@ -52,8 +55,10 @@ void task_consumer(void) {
     void *msg = os_mq_receive_fast(sensor_mq);
     int val = (int)(uintptr_t)msg;
 
+    os_mutex_lock(&serial_mutex);
     Serial.print(F("[Consumer] Processed: "));
     Serial.println(val);
+    os_mutex_unlock(&serial_mutex);
 
     /* Access shared resource using Mutex */
     os_mutex_lock(&led_mutex);
@@ -68,7 +73,10 @@ void task_consumer(void) {
 void task_led_a(void) {
   while (1) {
     os_mutex_lock(&led_mutex);
+    
+    os_mutex_lock(&serial_mutex);
     Serial.println(F("Task A has LED Mutex"));
+    os_mutex_unlock(&serial_mutex);
     
     /* Direct port manipulation - much faster than digitalWrite() */
     LED_ON();
@@ -87,7 +95,10 @@ void task_led_a(void) {
 void task_led_b(void) {
   while (1) {
     os_mutex_lock(&led_mutex);
+    
+    os_mutex_lock(&serial_mutex);
     Serial.println(F("Task B has LED Mutex"));
+    os_mutex_unlock(&serial_mutex);
     
     /* Direct port manipulation - much faster than digitalWrite() */
     LED_ON();
@@ -145,17 +156,16 @@ void setup() {
   /* Initialize OS and primitives */
   os_init(mem_pool, sizeof(mem_pool));
   os_mutex_init(&led_mutex);
+  os_mutex_init(&serial_mutex);
   sensor_mq = os_mq_create(5); /* Capacity of 5 messages */
 
   /* Create tasks:
-   * (ID, Func, Priority, StackSize)
-   * Higher priority number = higher priority
    */
-  os_create_task(10, task_producer, 10, 128); /* Highest priority */
-  os_create_task(5, task_consumer, 5, 128);   /* Medium priority */
-  os_create_task(1, task_led_a, 1, 96);       /* Low priority - reduced stack */
-  os_create_task(2, task_led_b, 1, 96);       /* Low priority - reduced stack */
-  os_create_task(0, task_idle, 0, 64);        /* Idle task, lowest priority */
+  os_create_task(10, task_producer, 10, 192); /* Highest priority - Increased Stack */
+  os_create_task(5, task_consumer, 5, 192);   /* Medium priority - Increased Stack */
+  os_create_task(1, task_led_a, 1, 160);       /* Low priority - Increased Stack */
+  os_create_task(2, task_led_b, 1, 160);       /* Low priority - Increased Stack */
+  os_create_task(0, task_idle, 0, 96);        /* Idle task - Increased Stack */
 
   Serial.println(F("Starting Pre-emptive Scheduler..."));
   Serial.print(F("Free memory: "));
