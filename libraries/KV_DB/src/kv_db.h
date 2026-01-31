@@ -11,7 +11,10 @@ extern "C" {
 
 #include "kv_hal.h"
 
-#define KV_MAX_KEY_LEN 24
+#define KV_MAX_KEY_LEN 48
+
+typedef void (*kv_iter_cb_t)(const char *key, const void *val, uint16_t val_len,
+                             void *ctx);
 #define KV_MAX_VAL_LEN 1024
 
 #ifdef KV_HAL_ARM
@@ -62,7 +65,8 @@ typedef enum {
   KV_ERR_FULL,
   KV_ERR_KEY_TOO_LONG,
   KV_ERR_VAL_TOO_LONG,
-  KV_ERR_EEPROM
+  KV_ERR_EEPROM,
+  KV_ERR_PARAM
 } kv_result_t;
 
 /**
@@ -131,6 +135,16 @@ int16_t kv_compact(void);
  * @return kv_result_t KV_SUCCESS or error code
  */
 kv_result_t kv_clear(void);
+
+/**
+ * @brief Iterate over keys starting with a prefix.
+ *
+ * @param prefix Null-terminated prefix string. "" matches all keys.
+ * @param cb Callback function to invoke for each match.
+ * @param ctx user context passed to callback.
+ * @return kv_result_t
+ */
+kv_result_t kv_iterate(const char *prefix, kv_iter_cb_t cb, void *ctx);
 
 #ifdef __cplusplus
 }

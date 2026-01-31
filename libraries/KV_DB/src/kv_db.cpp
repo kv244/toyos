@@ -5,7 +5,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-
 /* --- Configuration --- */
 
 #define KV_NUM_SECTORS (KV_EEPROM_SIZE / KV_SECTOR_SIZE)
@@ -332,6 +331,55 @@ kv_result_t kv_clear(void) {
   }
   index_cache->count = 0;
   kv_init(); /* Re-init */
+  kv_hal_unlock(&kv_lock);
+  return KV_SUCCESS;
+}
+
+kv_result_t kv_iterate(const char *prefix, kv_iter_cb_t cb, void *ctx) {
+  if (!cb)
+    return KV_ERR_PARAM;
+
+  kv_hal_lock(&kv_lock);
+
+  /* Binary search for start (Lower Bound) */
+  int16_t left = 0;
+  int16_t right = index_cache->count;
+
+  while (left < right) {
+    int16_t mid = left + (right - left) / 2;
+    char key_buf[KV_MAX_KEY_LEN + 1];
+    read_key_from_flash(index_cache->entries[mid].addr, key_buf);
+
+    if (strcmp(key_buf, prefix) < 0) {
+      left = mid + 1;
+    } else {
+      right = mid;
+    }
+  }
+
+  size_t prefix_len = strlen(prefix);
+
+  for (int i = left; i < index_cache->count; i++) {
+    char key_buf[KV_MAX_KEY_LEN + 1];
+    read_key_from_flash(index_cache->entries[i].addr, key_buf);
+
+    if (strncmp(key_buf, prefix, prefix_len) != 0) {
+      break;
+    }
+
+    uint32_t addr = index_cache->entries[i].addr;
+    KVRecord rec;
+    storage_read(addr, &rec, sizeof(KVRecord));
+
+    void *val_buf = os_malloc(rec.val_len + 1);
+    if (val_buf) {
+      storage_read(addr + sizeof(KVRecord) + rec.key_len, val_buf, rec.val_len);
+      ((char *)val_buf)[rec.val_len] = '\0'; // Ensure null term if string?
+      cb(key_buf, val_buf, rec.val_len, ctx);
+      os_free(val_buf);
+    }
+  }
+
   kv_hal_unlock(&kv_lock);
   return KV_SUCCESS;
 }

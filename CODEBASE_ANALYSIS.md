@@ -361,6 +361,14 @@ STATIC_ASSERT(sizeof(TaskControlBlock) < 256, tcb_too_large);
       - Sector-based circular writing
       - RAM-based index reconstruction
       - Tombstone support for deletions
+13. ✅ **Hierarchical Namespaces**
+    - **Status**: Implemented
+    - **Features**:
+      - `kv_iterate(prefix, ...)` API for structure traversal
+      - Binary search prefix matching O(log N)
+      - Extended Key Length (48 bytes) for paths
+      - RAM-based index reconstruction
+      - Tombstone support for deletions
 
 
 ## 📝 Conclusion
