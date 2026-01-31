@@ -9,7 +9,12 @@
 
 #include "port_arm.h"
 #include "../../port.h"
-#include "../../toyos.h" /* For TaskControlBlock */
+#include "../../toyos.h"        /* For TaskControlBlock */
+#include "../../toyos_config.h" /* For TOYOS_USE_MPU */
+
+#if TOYOS_USE_MPU
+#include "port_arm_mpu.h"
+#endif
 
 #ifdef PORT_PLATFORM_ARM_CORTEX_M
 
@@ -112,6 +117,18 @@ void port_context_switch(void) {
   __asm volatile("isb");
 }
 
+/* MPU Reconfiguration Helper (called from PendSV) */
+void port_mpu_reconfigure(TaskControlBlock *task) {
+#if TOYOS_USE_MPU
+  if (task) {
+    extern void port_mpu_configure_task_stack(void *stack_base,
+                                              uint32_t stack_size);
+    /* Stack base corresponds to the canary location (lowest address) */
+    port_mpu_configure_task_stack((void *)task->canary_ptr, task->stack_size);
+  }
+#endif
+}
+
 /**
  * PendSV Handler - The actual context switch
  */
@@ -133,6 +150,10 @@ __attribute__((naked)) void PendSV_Handler(void) {
 
       /* Select Next Task */
       "bl os_scheduler \n"
+
+      "ldr r0, =os_current_task_ptr \n"
+      "ldr r0, [r0] \n"
+      "bl port_mpu_reconfigure \n"
 
       "pop {r14} \n"
 

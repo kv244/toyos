@@ -269,6 +269,41 @@
 #define TOYOS_DEBUG 0
 #endif
 
+/* ========================================================================
+ * MEMORY PROTECTION (ARM ONLY)
+ * ======================================================================== */
+
+/**
+ * Enable MPU-based memory protection (ARM Cortex-M only).
+ * Provides hardware-enforced task isolation and stack protection.
+ *
+ * Features:
+ * - Task stack isolation (prevents stack overflow corruption)
+ * - Kernel data protection (user tasks cannot modify kernel structures)
+ * - Heap protection with guard pages
+ * - Immediate fault detection with precise error location
+ *
+ * Requirements:
+ * - ARM Cortex-M with MPU (M3/M4/M7)
+ * - Minimum 8 MPU regions
+ *
+ * Overhead:
+ * - Code size: ~300 bytes
+ * - Context switch: ~10-20 cycles
+ * - Runtime: Zero (hardware enforcement)
+ *
+ * Note: Automatically disabled on AVR (no MPU hardware)
+ *
+ * Default: 1 on ARM, 0 on AVR
+ */
+#ifndef TOYOS_USE_MPU
+#if defined(__ARM_ARCH) && !defined(__AVR__)
+#define TOYOS_USE_MPU 1
+#else
+#define TOYOS_USE_MPU 0
+#endif
+#endif
+
 /**
  * Enable runtime statistics collection.
  * Tracks task execution time, context switches, etc.

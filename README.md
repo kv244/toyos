@@ -7,6 +7,7 @@
 ToyOS is a lightweight, preemptive Real-Time Operating System (RTOS) designed for embedded systems. It supports multiple architectures including **Arduino UNO (AVR)** and **Arduino UNO R4 (ARM Cortex-M4)** with a unified CPU abstraction layer for maximum performance. Features include priority-based multitasking, inter-process communication, efficient resource management, and a persistent key-value database.
 
 **Recent Improvements (v2.5.1):**
+- ✅ **ARM MPU Support** - Hardware-enforced task isolation and stack protection
 - ✅ **CPU Port Abstraction** - Unified inline primitives for zero-overhead cross-platform support
 - ✅ **Source Tree Cleanup** - Professional repository structure with comprehensive documentation
 - ✅ **Code Quality Enhancements** - Explicit error handling and symbolic constants

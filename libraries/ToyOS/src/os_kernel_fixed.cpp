@@ -1,8 +1,13 @@
 #include "port.h"
 #include "toyos.h"
+#include "toyos_config.h"
 
 #ifdef ARDUINO
 #include <Arduino.h>
+#endif
+
+#if TOYOS_USE_MPU && (defined(__ARM_ARCH) || defined(ARDUINO_ARCH_RENESAS))
+#include "port/arm/port_arm_mpu.h"
 #endif
 
 /* Dynamic Task Pool - allocated during os_init to save global RAM */
@@ -74,6 +79,23 @@ void os_init(uint8_t *mem_pool, uint16_t mem_size) {
 
   /* Reset task pool index */
   task_pool_index = 0;
+
+#if TOYOS_USE_MPU
+/* Initialize MPU for memory protection (ARM only) */
+#ifdef ARDUINO
+  Serial.println(F("Initializing MPU..."));
+#endif
+
+  if (port_mpu_init()) {
+#ifdef ARDUINO
+    Serial.println(F("MPU: Enabled"));
+#endif
+  } else {
+#ifdef ARDUINO
+    Serial.println(F("MPU: Not available or failed"));
+#endif
+  }
+#endif
 }
 
 // ... heap helpers omitted (unchanged) ...
