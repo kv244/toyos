@@ -310,35 +310,161 @@ void *k_malloc(size_t size) {
 }
 
 void k_free(void *ptr) {
-  /* Implementation omitted for brevity, copy from original */
+  if (!ptr)
+    return;
+
+  typedef struct BlockHeader {
+    uint16_t size;
+    struct BlockHeader *next;
+  } BlockHeader;
+
+  BlockHeader *block = (BlockHeader *)((uint8_t *)ptr - sizeof(BlockHeader));
+  port_enter_critical();
+
+  /* Insert sorted by Addr */
+  BlockHeader *prev = NULL;
+  BlockHeader *curr = (BlockHeader *)kernel.mem_manager.free_list_head;
+
+  while (curr && curr < block) {
+    prev = curr;
+    curr = curr->next;
+  }
+
+  /* Insert */
+  block->next = curr;
+  if (prev)
+    prev->next = block;
+  else
+    kernel.mem_manager.free_list_head = (void *)block;
+
+  /* Coalesce Next */
+  if (curr &&
+      (uint8_t *)block + sizeof(BlockHeader) + block->size == (uint8_t *)curr) {
+    block->size += sizeof(BlockHeader) + curr->size;
+    block->next = curr->next;
+  }
+
+  /* Coalesce Prev */
+  if (prev &&
+      (uint8_t *)prev + sizeof(BlockHeader) + prev->size == (uint8_t *)block) {
+    prev->size += sizeof(BlockHeader) + block->size;
+    prev->next = block->next;
+  }
+
+  port_exit_critical();
 }
 
 void k_mutex_init(Mutex *m) {
   m->locked = 0;
   m->owner = NULL;
+  m->blocked_tasks.head = NULL;
+  m->blocked_tasks.tail = NULL;
+  m->blocked_tasks.count = 0;
 }
+
 void k_mutex_lock(Mutex *m) {
   port_enter_critical();
   if (m->locked) {
-    /* Block logic */
+    /* Priority Inheritance */
+    TaskControlBlock *owner = m->owner;
+    if (owner && owner->priority < kernel.current_task->priority) {
+      owner->priority = kernel.current_task->priority;
+    }
+
+    /* Block */
+    TaskNode *node = kernel.current_node;
+    node->next = NULL;
+    if (m->blocked_tasks.tail) {
+      m->blocked_tasks.tail->next = node;
+    } else {
+      m->blocked_tasks.head = node;
+    }
+    m->blocked_tasks.tail = node;
+    m->blocked_tasks.count++;
+
+    node->task.state = TASK_BLOCKED;
+    port_exit_critical();
+    k_yield();
   } else {
     m->locked = 1;
     m->owner = kernel.current_task;
+    port_exit_critical();
+  }
+}
+
+void k_mutex_unlock(Mutex *m) {
+  port_enter_critical();
+  /* Restore Priority */
+  if (kernel.current_task == m->owner) {
+    kernel.current_task->priority = kernel.current_task->base_priority;
+  }
+
+  if (m->blocked_tasks.head) {
+    TaskNode *waking = m->blocked_tasks.head;
+    m->blocked_tasks.head = waking->next;
+    if (!m->blocked_tasks.head)
+      m->blocked_tasks.tail = NULL;
+    m->blocked_tasks.count--;
+
+    m->owner = &waking->task;
+    waking->task.state = TASK_READY;
+    heap_push(waking);
+  } else {
+    m->locked = 0;
+    m->owner = NULL;
   }
   port_exit_critical();
 }
-void k_mutex_unlock(Mutex *m) {
+
+/* Semaphores with Direct Handoff */
+void k_sem_init(Semaphore *s, uint8_t c) {
+  s->count = c;
+  s->blocked_tasks.head = NULL;
+  s->blocked_tasks.tail = NULL;
+  s->blocked_tasks.count = 0;
+}
+
+void k_sem_wait(Semaphore *s) {
   port_enter_critical();
-  m->locked = 0;
-  m->owner = NULL;
-  /* Wake logic */
+  if (s->count > 0) {
+    s->count--;
+  } else {
+    /* Block */
+    TaskNode *node = kernel.current_node;
+    node->next = NULL;
+    if (s->blocked_tasks.tail) {
+      s->blocked_tasks.tail->next = node;
+    } else {
+      s->blocked_tasks.head = node;
+    }
+    s->blocked_tasks.tail = node;
+    s->blocked_tasks.count++;
+
+    node->task.state = TASK_BLOCKED;
+    port_exit_critical();
+    k_yield();
+    return; /* On wakeup, resource is handed off */
+  }
   port_exit_critical();
 }
 
-/* Stubs for Sem/MQ */
-void k_sem_init(Semaphore *s, uint8_t c) {}
-void k_sem_wait(Semaphore *s) {}
-void k_sem_post(Semaphore *s) {}
+void k_sem_post(Semaphore *s) {
+  port_enter_critical();
+  if (s->blocked_tasks.head) {
+    /* Direct Handoff - Wake one task, do not increment count */
+    TaskNode *waking = s->blocked_tasks.head;
+    s->blocked_tasks.head = waking->next;
+    if (!s->blocked_tasks.head)
+      s->blocked_tasks.tail = NULL;
+    s->blocked_tasks.count--;
+
+    waking->task.state = TASK_READY;
+    heap_push(waking);
+  } else {
+    s->count++;
+  }
+  port_exit_critical();
+}
 MessageQueue *k_mq_create(uint8_t c) { return NULL; }
 void k_mq_send(MessageQueue *q, void *m) {}
 void *k_mq_receive(MessageQueue *q) { return NULL; }
