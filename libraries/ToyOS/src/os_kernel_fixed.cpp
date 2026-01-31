@@ -148,60 +148,58 @@ void *os_malloc(uint16_t size) {
 
 /* Memory Deallocation - Coalescing Strategy */
 void os_free(void *ptr) {
-  if (!ptr)
-    return;
+  if (ptr != NULL) {
+    /* Recover header */
+    BlockHeader *block = (BlockHeader *)((uint8_t *)ptr - sizeof(BlockHeader));
 
-  /* Recover header */
-  BlockHeader *block = (BlockHeader *)((uint8_t *)ptr - sizeof(BlockHeader));
+    /* Insert into sorted free list */
+    BlockHeader *prev = NULL;
+    BlockHeader *curr = (BlockHeader *)kernel.mem_manager.free_list_head;
 
-  /* Insert into sorted free list */
-  BlockHeader *prev = NULL;
-  BlockHeader *curr = (BlockHeader *)kernel.mem_manager.free_list_head;
+    /* Find insertion point (sorted by address) */
+    while (curr != NULL && curr < block) {
+      prev = curr;
+      curr = curr->next;
+    }
 
-  /* Find insertion point (sorted by address) */
-  while (curr != NULL && curr < block) {
-    prev = curr;
-    curr = curr->next;
-  }
+    /* Insert */
+    if (prev) {
+      prev->next = block;
+    } else {
+      kernel.mem_manager.free_list_head = block;
+    }
+    block->next = curr;
 
-  /* Insert */
-  if (prev) {
-    prev->next = block;
-  } else {
-    kernel.mem_manager.free_list_head = block;
-  }
-  block->next = curr;
+    /* Coalesce with NEXT block */
+    if (curr && ((uint8_t *)block + sizeof(BlockHeader) + block->size) ==
+                    (uint8_t *)curr) {
+      block->size += sizeof(BlockHeader) + curr->size;
+      block->next = curr->next;
+    }
 
-  /* Coalesce with NEXT block */
-  if (curr && ((uint8_t *)block + sizeof(BlockHeader) + block->size) ==
-                  (uint8_t *)curr) {
-    block->size += sizeof(BlockHeader) + curr->size;
-    block->next = curr->next;
-  }
-
-  /* Coalesce with PREV block */
-  if (prev && ((uint8_t *)prev + sizeof(BlockHeader) + prev->size) ==
-                  (uint8_t *)block) {
-    prev->size += sizeof(BlockHeader) + block->size;
-    prev->next = block->next;
+    /* Coalesce with PREV block */
+    if (prev && ((uint8_t *)prev + sizeof(BlockHeader) + prev->size) ==
+                    (uint8_t *)block) {
+      prev->size += sizeof(BlockHeader) + block->size;
+      prev->next = block->next;
+    }
   }
 }
 
 /* Binary Heap Helpers - with assertions */
 static void heap_push(TaskNode *node) {
   ASSERT(kernel.ready_heap.size < MAX_TASKS);
-  if (kernel.ready_heap.size >= MAX_TASKS)
-    return;
-
-  uint8_t i = kernel.ready_heap.size++;
-  while (i > 0) {
-    uint8_t p = (i - 1) / 2;
-    if (kernel.ready_heap.nodes[p]->task.priority >= node->task.priority)
-      break;
-    kernel.ready_heap.nodes[i] = kernel.ready_heap.nodes[p];
-    i = p;
+  if (kernel.ready_heap.size < MAX_TASKS) {
+    uint8_t i = kernel.ready_heap.size++;
+    while (i > 0) {
+      uint8_t p = (i - 1) / 2;
+      if (kernel.ready_heap.nodes[p]->task.priority >= node->task.priority)
+        break;
+      kernel.ready_heap.nodes[i] = kernel.ready_heap.nodes[p];
+      i = p;
+    }
+    kernel.ready_heap.nodes[i] = node;
   }
-  kernel.ready_heap.nodes[i] = node;
 }
 
 static TaskNode *heap_pop(void) {

@@ -346,7 +346,14 @@ STATIC_ASSERT(sizeof(TaskControlBlock) < 256, tcb_too_large);
       - Fault handler with detailed error reporting
     - **Verification**: Builds successfully on RA4M1
 
----
+### Phase 5: Safety Certification Prep (MISRA C)
+11. 🚧 **MISRA Compliance** - Static Code Analysis
+    - **Status**: Started
+    - **Actions**:
+      - Created `MISRA_COMPLIANCE.md` guide
+      - Refactored kernel core (`os_free`, `heap_push`) for Single Point of Exit (Rule 15.5)
+      - Next: Review type casting and recursion
+
 
 ## 📝 Conclusion
 
