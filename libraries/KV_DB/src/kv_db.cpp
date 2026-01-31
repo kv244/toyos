@@ -1,6 +1,8 @@
 #include "kv_db.h"
-#include <avr/eeprom.h>
+#include "hal/storage_avr_eeprom.h"
+#include "hal/storage_driver.h"
 #include <string.h>
+
 
 // Global state
 static Mutex kv_mutex;
@@ -18,11 +20,11 @@ static struct {
  */
 static void read_key_from_record(uint16_t addr, char *key_buffer) {
   KVRecord header;
-  eeprom_read_block(&header, (void *)addr, sizeof(KVRecord));
+  storage_read(addr, &header, sizeof(KVRecord));
 
   uint8_t read_len =
       (header.key_len > KV_MAX_KEY_LEN) ? KV_MAX_KEY_LEN : header.key_len;
-  eeprom_read_block(key_buffer, (void *)(addr + sizeof(KVRecord)), read_len);
+  storage_read(key_buffer, addr + sizeof(KVRecord), read_len);
   key_buffer[read_len] = '\0';
 }
 
@@ -130,9 +132,9 @@ static void write_index_to_eeprom(void) {
   header.count = index_cache.count;
   header.reserved = 0;
 
-  eeprom_update_block(&header, (void *)KV_HEADER_OFFSET, sizeof(KVHeader));
-  eeprom_update_block(index_cache.entries, (void *)KV_INDEX_OFFSET,
-                      index_cache.count * sizeof(IndexEntry));
+  storage_write(KV_HEADER_OFFSET, &header, sizeof(KVHeader));
+  storage_write(KV_INDEX_OFFSET, index_cache.entries,
+                index_cache.count * sizeof(IndexEntry));
 }
 
 /**
@@ -142,15 +144,23 @@ static void write_index_to_eeprom(void) {
 kv_result_t kv_init(void) {
   os_mutex_init(&kv_mutex);
 
+  /* Initialize storage driver if not set */
+  if (storage_get_capacity() == 0) {
+#ifdef __AVR__
+    storage_set_driver(storage_get_avr_eeprom_driver());
+#endif
+    storage_init();
+  }
+
   // Read header
   KVHeader header;
-  eeprom_read_block(&header, (void *)KV_HEADER_OFFSET, sizeof(KVHeader));
+  storage_read(KV_HEADER_OFFSET, &header, sizeof(KVHeader));
 
   if (header.magic == KV_MAGIC && header.count <= KV_MAX_KEYS) {
     // Valid database exists - load index
     index_cache.count = header.count;
-    eeprom_read_block(index_cache.entries, (void *)KV_INDEX_OFFSET,
-                      header.count * sizeof(IndexEntry));
+    storage_read(KV_INDEX_OFFSET, index_cache.entries,
+                 header.count * sizeof(IndexEntry));
 
     // Find next free address by scanning records
     index_cache.next_free_addr = KV_RECORDS_OFFSET;
@@ -167,7 +177,7 @@ kv_result_t kv_init(void) {
       }
 
       KVRecord rec;
-      eeprom_read_block(&rec, (void *)addr, sizeof(KVRecord));
+      storage_read(addr, &rec, sizeof(KVRecord));
 
       // Validate record fields to prevent overflow
       if (rec.key_len > KV_MAX_KEY_LEN || rec.val_len > KV_MAX_VAL_LEN) {
@@ -225,7 +235,7 @@ kv_result_t kv_write(const char *key, const char *value, uint16_t val_len) {
     uint16_t old_addr = index_cache.entries[idx].addr;
     uint8_t flags = KV_FLAG_FREE;
     // Write flag to EEPROM (offset 3 in KVRecord struct)
-    eeprom_update_block(&flags, (void *)(old_addr + 3), sizeof(uint8_t));
+    storage_write(old_addr + 3, &flags, sizeof(uint8_t));
   }
 
   // Write new record
@@ -235,10 +245,9 @@ kv_result_t kv_write(const char *key, const char *value, uint16_t val_len) {
   header.val_len = val_len;
   header.flags = 0;
 
-  eeprom_update_block(&header, (void *)addr, sizeof(KVRecord));
-  eeprom_update_block(key, (void *)(addr + sizeof(KVRecord)), key_len);
-  eeprom_update_block(value, (void *)(addr + sizeof(KVRecord) + key_len),
-                      val_len);
+  storage_write(addr, &header, sizeof(KVRecord));
+  storage_write(addr + sizeof(KVRecord), key, key_len);
+  storage_write(addr + sizeof(KVRecord) + key_len, value, val_len);
 
   // Update index
   if (is_update) {
@@ -286,12 +295,12 @@ kv_result_t kv_read(const char *key, char *buffer, uint16_t max_len,
   // Read record
   uint16_t addr = index_cache.entries[idx].addr;
   KVRecord header;
-  eeprom_read_block(&header, (void *)addr, sizeof(KVRecord));
+  storage_read(addr, &header, sizeof(KVRecord));
 
   // Read value
   uint16_t read_len = (header.val_len > max_len) ? max_len : header.val_len;
   uint16_t val_offset = addr + sizeof(KVRecord) + header.key_len;
-  eeprom_read_block(buffer, (void *)val_offset, read_len);
+  storage_read(val_offset, buffer, read_len);
 
   if (actual_len)
     *actual_len = header.val_len;
@@ -345,7 +354,7 @@ int16_t kv_compact(void) {
 
     // Read the record header
     KVRecord header;
-    eeprom_read_block(&header, (void *)old_addr, sizeof(KVRecord));
+    storage_read(old_addr, &header, sizeof(KVRecord));
 
     // Calculate record size
     uint16_t record_size = sizeof(KVRecord) + header.key_len + header.val_len;
@@ -367,13 +376,13 @@ int16_t kv_compact(void) {
     // We do this in chunks to avoid using too much SRAM
 
     // Copy header
-    eeprom_update_block(&header, (void *)write_addr, sizeof(KVRecord));
+    storage_write(write_addr, &header, sizeof(KVRecord));
 
     // Copy key
     uint16_t src_offset = old_addr + sizeof(KVRecord);
     uint16_t dst_offset = write_addr + sizeof(KVRecord);
-    eeprom_read_block(temp_buffer, (void *)src_offset, header.key_len);
-    eeprom_update_block(temp_buffer, (void *)dst_offset, header.key_len);
+    storage_read(src_offset, temp_buffer, header.key_len);
+    storage_write(dst_offset, temp_buffer, header.key_len);
 
     // Copy value in chunks to avoid large SRAM usage
     uint16_t val_remaining = header.val_len;
@@ -383,8 +392,8 @@ int16_t kv_compact(void) {
     while (val_remaining > 0) {
       uint16_t chunk_size =
           (val_remaining > KV_MAX_KEY_LEN) ? KV_MAX_KEY_LEN : val_remaining;
-      eeprom_read_block(temp_buffer, (void *)src_offset, chunk_size);
-      eeprom_update_block(temp_buffer, (void *)dst_offset, chunk_size);
+      storage_read(src_offset, temp_buffer, chunk_size);
+      storage_write(dst_offset, temp_buffer, chunk_size);
 
       src_offset += chunk_size;
       dst_offset += chunk_size;
