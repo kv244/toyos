@@ -90,7 +90,8 @@ void test_persistence(void) {
  */
 void test_edge_cases(void) {
   // Key too long (> 24)
-  const char *long_key = "this_key_is_waaaaay_too_long_for_the_db";
+  const char *long_key =
+      "this_key_is_waaaaay_too_long_for_the_db_limit_which_is_now_48_bytes";
   if (kv_write(long_key, "val", 3) != KV_ERR_KEY_TOO_LONG) {
     test_log("Key too long limit", false);
   } else {
@@ -222,6 +223,32 @@ void test_compaction(void) {
   }
 }
 
+static void hierarchy_cb(const char *key, const void *val, uint16_t len,
+                         void *ctx) {
+  int *count = (int *)ctx;
+  (*count)++;
+  // Verify key starts with prefix "test/grp/"
+  if (strncmp(key, "test/grp/", 9) != 0) {
+    *count = -999;
+  }
+}
+
+void test_hierarchy(void) {
+  kv_clear();
+  kv_write("test/grp/k1", "v1", 2);
+  kv_write("test/grp/k2", "v2", 2);
+  kv_write("test/other/k3", "v3", 2);
+
+  int count = 0;
+  kv_iterate("test/grp/", hierarchy_cb, &count);
+
+  if (count == 2) {
+    test_log("Hierarchy", true);
+  } else {
+    test_log("Hierarchy", false);
+  }
+}
+
 extern "C" void run_all_tests(void) {
   os_mutex_lock(&serial_mutex);
   Serial.println(F("--- Starting DB Test Suite ---"));
@@ -231,6 +258,7 @@ extern "C" void run_all_tests(void) {
   test_persistence();
   test_edge_cases();
   test_eeprom_full();
+  test_hierarchy();
   test_compaction();
   test_concurrency();
 
