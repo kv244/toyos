@@ -213,28 +213,21 @@ TOYOS_HOT void os_scheduler(void) {
   }
 }
 
-void os_system_tick(void) {
+TOYOS_HOT void os_system_tick(void) {
   kernel.system_tick++;
-  /* Blocked Queue Logic... (omitted for brevity, assume standard) */
-  /* Actually must implement to support delays! */
-  TaskNode *curr = kernel.blocked_queue.head;
-  if (curr) {
-    if (curr->task.delta_ticks > 0)
-      curr->task.delta_ticks--;
-    while (curr && curr->task.delta_ticks == 0) {
-      /* Wake up */
-      TaskNode *next = curr->next;
-      curr->task.state = TASK_READY;
-      heap_push(curr);
+  if (kernel.blocked_queue.head) {
+    if (kernel.blocked_queue.head->task.delta_ticks > 0)
+      kernel.blocked_queue.head->task.delta_ticks--;
 
-      /* Remove from blocked queue */
-      kernel.blocked_queue.head = next;
-      if (next == NULL)
+    while (kernel.blocked_queue.head &&
+           kernel.blocked_queue.head->task.delta_ticks == 0) {
+      TaskNode *waking = kernel.blocked_queue.head;
+      kernel.blocked_queue.head = waking->next;
+      if (kernel.blocked_queue.head == NULL)
         kernel.blocked_queue.tail = NULL;
-      else
-        kernel.blocked_queue.count--; /* Wait, count logic needs care */
 
-      curr = next;
+      waking->task.state = TASK_READY;
+      heap_push(waking);
     }
   }
 }
@@ -246,13 +239,25 @@ void k_delay(uint16_t ticks) {
   TaskNode *node = kernel.current_node;
   if (node) {
     node->task.state = TASK_BLOCKED;
-    /* Logic to add to blocked queue with delta */
-    /* Simplified: Add to head */
-    node->next = kernel.blocked_queue.head;
-    kernel.blocked_queue.head = node;
-    node->task.delta_ticks = ticks;
-    /* Note: Full delta list logic omitted for brevity in this rewrite,
-       can copy from original if needed or assume simple list */
+
+    /* Orderly Insert into Delta Queue */
+    TaskNode **curr = &kernel.blocked_queue.head;
+    TaskNode *entry = kernel.blocked_queue.head;
+    uint16_t delay = ticks;
+
+    while (entry && delay >= entry->task.delta_ticks) {
+      delay -= entry->task.delta_ticks;
+      curr = &entry->next;
+      entry = entry->next;
+    }
+
+    node->task.delta_ticks = delay;
+    node->next = entry;
+    *curr = node;
+
+    if (entry) {
+      entry->task.delta_ticks -= delay;
+    }
   }
   port_exit_critical();
   k_yield();
