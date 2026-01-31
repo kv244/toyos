@@ -11,10 +11,11 @@ ToyOS v2.5 represents a major architectural leap, successfully transitioning fro
   - `port/avr/`: Preserves the efficient, hand-tuned assembly for ATmega328P.
   - `port/arm/`: Introduces Cortex-M support using industry-standard `PendSV` and `SysTick`.
 
-### 2. Storage HAL (`storage_driver.h`, `kv_hal.h`)
-- **Abstraction**: A unified `storage_read`/`storage_write` interface replaces direct EEPROM calls.
-- **Hardware Acceleration (ARM)**: Integrated **RA4M1 Hardware CRC32** engine in the KV database for high-speed integrity checks.
-- **O(1) Lookup**: Implemented a **Shadow Index (Hash Table)** for the KV Database on ARM, leveraging the larger SRAM of the Uno R4 to achieve constant-time lookups.
+- **Storage HAL (`storage_driver.h`, `kv_hal.h`)**:
+  - **Flash-Optimized Compaction**: Implemented high-speed SRAM-buffered compaction with block erasing for ARM/Flash.
+  - **AVR Safe Compaction**: Added address-ordered record movement for EEPROM to prevent data overlap corruption.
+  - **RA4M1 Hardware CRC32**: Integrated hardware engine for high-speed integrity checks.
+  - **O(1) Hash Lookup**: Constant-time reads on ARM via SRAM shadow index.
 - **Flexibility**:
   - **AVR**: Uses internal EEPROM driver with sorted binary search (O(log N)).
   - **ARM**: Uses Data Flash emulation via a new `storage_arduino_eeprom` driver with hash-based lookup.

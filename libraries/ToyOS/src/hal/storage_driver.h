@@ -16,7 +16,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -95,6 +94,7 @@ void storage_set_driver(const storage_driver_t *driver);
 storage_result_t storage_init(void);
 storage_result_t storage_read(uint32_t addr, void *buf, size_t len);
 storage_result_t storage_write(uint32_t addr, const void *buf, size_t len);
+storage_result_t storage_erase(uint32_t addr, size_t len);
 uint32_t storage_get_capacity(void);
 
 #ifdef __cplusplus

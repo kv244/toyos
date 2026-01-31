@@ -2,7 +2,9 @@
 #include "hal/storage_arduino_eeprom.h"
 #include "hal/storage_avr_eeprom.h"
 #include "hal/storage_driver.h"
+#include <stdlib.h> // For qsort
 #include <string.h>
+
 
 // Global state
 static kv_lock_t kv_lock;
@@ -12,6 +14,9 @@ static kv_lock_t kv_lock;
 #define KV_HASH_SIZE 32
 static uint16_t shadow_index[KV_HASH_SIZE];
 
+/* SRAM buffer for Flash compaction. R4 has 32KB, so 8KB is safe. */
+static uint8_t arm_compact_buf[KV_EEPROM_SIZE];
+
 static uint8_t kv_hash(const char *key) {
   uint32_t h = 2166136261U;
   while (*key) {
@@ -20,6 +25,22 @@ static uint8_t kv_hash(const char *key) {
   return (uint8_t)(h % KV_HASH_SIZE);
 }
 #endif
+
+// Helper for sorting move list by address to prevent overwrite overlaps
+typedef struct {
+  uint16_t addr;
+  uint8_t index_idx;
+} MoveEntry;
+
+static int compare_move_entries(const void *a, const void *b) {
+  const MoveEntry *ma = (const MoveEntry *)a;
+  const MoveEntry *mb = (const MoveEntry *)b;
+  if (ma->addr < mb->addr)
+    return -1;
+  if (ma->addr > mb->addr)
+    return 1;
+  return 0;
+}
 
 typedef struct {
   uint8_t count;                   // Current number of keys
@@ -268,12 +289,13 @@ kv_result_t kv_write(const char *key, const char *value, uint16_t val_len) {
   int16_t idx = index_search(key);
   bool is_update = (idx >= 0);
 
-  // If updating, mark old record as free
+  // If updating, mark old record as free (only on EEPROM backends)
   if (is_update) {
     uint16_t old_addr = index_cache->entries[idx].addr;
+#ifndef KV_HAL_ARM
     uint8_t flags = KV_FLAG_FREE;
-    // Write flag to EEPROM (offset 3 in KVRecord struct)
     storage_write(old_addr + 3, &flags, sizeof(uint8_t));
+#endif
   }
 
   // Write new record
@@ -414,76 +436,79 @@ int16_t kv_compact(void) {
   uint16_t old_next_free = index_cache->next_free_addr;
   uint16_t write_addr = KV_RECORDS_OFFSET;
 
-  // Temporary buffer for copying record data
-  char temp_buffer[KV_MAX_KEY_LEN + 1];
-
-  // Process each entry in the index
+#ifdef KV_HAL_ARM
+  /* --- HIGH-SPEED ARM FLASH COMPACTION --- */
+  uint16_t buf_ptr = 0;
   for (uint8_t i = 0; i < index_cache->count; i++) {
     uint16_t old_addr = index_cache->entries[i].addr;
-
-    // Read the record header
     KVRecord header;
     storage_read(old_addr, &header, sizeof(KVRecord));
+    uint16_t rec_size = sizeof(KVRecord) + header.key_len + header.val_len;
 
-    // Calculate record size
-    uint16_t record_size = sizeof(KVRecord) + header.key_len + header.val_len;
+    if (buf_ptr + rec_size > (KV_EEPROM_SIZE - KV_RECORDS_OFFSET))
+      break;
 
-    // If we have space (should always succeed for compaction)
-    if (write_addr + record_size > KV_EEPROM_SIZE) {
-      // This shouldn't happen - the data should always fit
-      kv_hal_unlock(&kv_lock);
-      return KV_ERR_FULL;
-    }
+    storage_read(old_addr, &arm_compact_buf[buf_ptr], rec_size);
+    index_cache->entries[i].addr = KV_RECORDS_OFFSET + buf_ptr;
+    buf_ptr += rec_size;
+  }
 
-    // If the record is already at the target location, skip copying
+  /* Erase & Sequential Write (Best for Flash) */
+  storage_erase(KV_RECORDS_OFFSET, KV_EEPROM_SIZE - KV_RECORDS_OFFSET);
+  storage_write(KV_RECORDS_OFFSET, arm_compact_buf, buf_ptr);
+  write_addr = KV_RECORDS_OFFSET + buf_ptr;
+
+#else
+  /* --- AVR EEPROM COMPACTION (Safe Sequential Move) --- */
+  MoveEntry move_list[KV_MAX_KEYS];
+  for (uint8_t i = 0; i < index_cache->count; i++) {
+    move_list[i].addr = index_cache->entries[i].addr;
+    move_list[i].index_idx = i;
+  }
+  qsort(move_list, index_cache->count, sizeof(MoveEntry), compare_move_entries);
+
+  char temp_buffer[KV_MAX_KEY_LEN + 1];
+  for (uint8_t i = 0; i < index_cache->count; i++) {
+    uint8_t idx = move_list[i].index_idx;
+    uint16_t old_addr = move_list[i].addr;
+
+    KVRecord header;
+    storage_read(old_addr, &header, sizeof(KVRecord));
+    uint16_t rec_size = sizeof(KVRecord) + header.key_len + header.val_len;
+
     if (old_addr == write_addr) {
-      write_addr += record_size;
+      write_addr += rec_size;
       continue;
     }
 
-    // Copy the entire record (header + key + value) to new location
-    // We do this in chunks to avoid using too much SRAM
-
-    // Copy header
     storage_write(write_addr, &header, sizeof(KVRecord));
+    uint16_t src = old_addr + sizeof(KVRecord);
+    uint16_t dst = write_addr + sizeof(KVRecord);
+    storage_read(src, temp_buffer, header.key_len);
+    storage_write(dst, temp_buffer, header.key_len);
 
-    // Copy key
-    uint16_t src_offset = old_addr + sizeof(KVRecord);
-    uint16_t dst_offset = write_addr + sizeof(KVRecord);
-    storage_read(src_offset, temp_buffer, header.key_len);
-    storage_write(dst_offset, temp_buffer, header.key_len);
-
-    // Copy value in chunks to avoid large SRAM usage
-    uint16_t val_remaining = header.val_len;
-    src_offset += header.key_len;
-    dst_offset += header.key_len;
-
-    while (val_remaining > 0) {
-      uint16_t chunk_size =
-          (val_remaining > KV_MAX_KEY_LEN) ? KV_MAX_KEY_LEN : val_remaining;
-      storage_read(src_offset, temp_buffer, chunk_size);
-      storage_write(dst_offset, temp_buffer, chunk_size);
-
-      src_offset += chunk_size;
-      dst_offset += chunk_size;
-      val_remaining -= chunk_size;
+    src += header.key_len;
+    dst += header.key_len;
+    uint16_t remaining = header.val_len;
+    while (remaining > 0) {
+      uint16_t chunk =
+          (remaining > KV_MAX_KEY_LEN) ? KV_MAX_KEY_LEN : remaining;
+      storage_read(src, temp_buffer, chunk);
+      storage_write(dst, temp_buffer, chunk);
+      src += chunk;
+      dst += chunk;
+      remaining -= chunk;
     }
-
-    // Update index entry with new address
-    index_cache->entries[i].addr = write_addr;
-
-    // Move write pointer forward
-    write_addr += record_size;
+    index_cache->entries[idx].addr = write_addr;
+    write_addr += rec_size;
   }
+#endif
 
-  // Update next free address
   index_cache->next_free_addr = write_addr;
-
-  // Persist updated index to EEPROM
   write_index_to_eeprom();
 
 #ifdef KV_HAL_ARM
-  /* Rebuild shadow index after compaction */
+  /* Rebuild shadow index */
   for (int i = 0; i < KV_HASH_SIZE; i++)
     shadow_index[i] = 0xFFFF;
   for (uint8_t i = 0; i < index_cache->count; i++) {
@@ -493,9 +518,7 @@ int16_t kv_compact(void) {
   }
 #endif
 
-  // Calculate bytes reclaimed
   int16_t reclaimed = old_next_free - write_addr;
-
   kv_hal_unlock(&kv_lock);
   return reclaimed;
 }
@@ -513,6 +536,8 @@ kv_result_t kv_clear(void) {
 #ifdef KV_HAL_ARM
   for (int i = 0; i < KV_HASH_SIZE; i++)
     shadow_index[i] = 0xFFFF;
+  /* Properly erase flash area */
+  storage_erase(KV_RECORDS_OFFSET, KV_EEPROM_SIZE - KV_RECORDS_OFFSET);
 #endif
 
   // Write empty header

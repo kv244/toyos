@@ -39,11 +39,18 @@ static storage_result_t arduino_eeprom_write(uint32_t addr, const void *buf,
 
 static uint32_t arduino_eeprom_capacity(void) { return EEPROM.length(); }
 
+static storage_result_t arduino_eeprom_erase(uint32_t addr, size_t len) {
+  for (size_t i = 0; i < len; i++) {
+    EEPROM.update(addr + i, 0xFF);
+  }
+  return STORAGE_OK;
+}
+
 static const storage_driver_t arduino_eeprom_driver = {
     .init = arduino_eeprom_init,
     .read = arduino_eeprom_read,
     .write = arduino_eeprom_write,
-    .erase = NULL,
+    .erase = arduino_eeprom_erase,
     .get_capacity = arduino_eeprom_capacity,
     .name = "Arduino EEPROM"};
 

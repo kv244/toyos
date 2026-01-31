@@ -32,6 +32,16 @@ storage_result_t storage_write(uint32_t addr, const void *buf, size_t len) {
   return STORAGE_ERR_WRITE_FAILED;
 }
 
+storage_result_t storage_erase(uint32_t addr, size_t len) {
+  if (current_storage_driver && current_storage_driver->erase) {
+    return current_storage_driver->erase(addr, len);
+  }
+  /* If erase is not supported, it might be EEPROM which doesn't need it.
+   * Return OK to allow seamless compaction on EEPROM.
+   */
+  return STORAGE_OK;
+}
+
 uint32_t storage_get_capacity(void) {
   if (current_storage_driver && current_storage_driver->get_capacity) {
     return current_storage_driver->get_capacity();
