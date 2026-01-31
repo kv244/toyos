@@ -237,33 +237,8 @@ uint32_t port_get_eeprom_size(void) {
   return 8 * 1024; /* 8KB Data Flash acts as EEPROM */
 }
 
-/* Atomic */
-uint8_t port_atomic_inc_u8(volatile uint8_t *ptr) {
-  return __atomic_add_fetch(ptr, 1, __ATOMIC_SEQ_CST);
-}
-
-uint8_t port_atomic_dec_u8(volatile uint8_t *ptr) {
-  return __atomic_sub_fetch(ptr, 1, __ATOMIC_SEQ_CST);
-}
-
-bool port_atomic_cas_u8(volatile uint8_t *ptr, uint8_t expected,
-                        uint8_t desired) {
-  return __atomic_compare_exchange_n(ptr, &expected, desired, false,
-                                     __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
-}
-
-/* Critical Section */
-void port_enter_critical(void) {
-  port_disable_interrupts();
-  critical_nesting++;
-}
-
-void port_exit_critical(void) {
-  critical_nesting--;
-  if (critical_nesting == 0) {
-    port_enable_interrupts();
-  }
-}
+/* Atomic and Critical Section functions are now inlined in port.h via
+ * cpu_port.h */
 
 /* Ticks */
 uint32_t port_get_tick(void) {
@@ -299,10 +274,6 @@ uint32_t port_get_tick(void) {
 }
 
 /* Power & WDT */
-void port_enter_idle(void) {
-  /* WFI instruction to sleep until interrupt */
-  __asm volatile("wfi");
-}
 
 void port_wdt_init(uint16_t timeout_ms) {
   (void)timeout_ms;
@@ -312,13 +283,6 @@ void port_wdt_init(uint16_t timeout_ms) {
 void port_wdt_feed(void) { /* Stub: Implement R4 WDT feed here */ }
 
 void port_wdt_disable(void) { /* Stub */ }
-
-/* Get Stack Pointer */
-void *port_get_stack_pointer(void) {
-  uint32_t sp;
-  __asm__ __volatile__("mov %0, sp" : "=r"(sp));
-  return (void *)sp;
-}
 
 uint8_t *port_fast_zero_stack(uint8_t *sp, uint8_t count) {
   /* Fallback C implementation or optimized assembly */

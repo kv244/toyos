@@ -58,102 +58,15 @@ extern "C" {
 #define PORT_AVR_EEPROM_SIZE 1024 /* 1KB EEPROM */
 
 /* ========================================================================
- * CRITICAL SECTION (INLINE FOR PERFORMANCE)
+ * CRITICAL SECTION & ATOMICS - NOW CENTRALIZED IN CPU_PORT.H
  * ======================================================================== */
 
-/**
- * Critical section state storage.
- * Stores SREG to allow nested critical sections.
- */
 extern volatile uint8_t port_critical_nesting;
 extern volatile uint8_t port_saved_sreg;
-
-/**
- * Enter critical section - disable interrupts and save state.
- */
-static inline void port_enter_critical(void) {
-  uint8_t sreg;
-  __asm__ __volatile__("in %0, %1 \n\t"
-                       "cli \n\t"
-                       : "=r"(sreg)
-                       : "I"(_SFR_IO_ADDR(SREG))
-                       : "memory");
-
-  if (port_critical_nesting == 0) {
-    port_saved_sreg = sreg;
-  }
-  port_critical_nesting++;
-}
-
-/**
- * Exit critical section - restore interrupt state.
- */
-static inline void port_exit_critical(void) {
-  port_critical_nesting--;
-
-  if (port_critical_nesting == 0) {
-    __asm__ __volatile__("out %0, %1 \n\t"
-                         :
-                         : "I"(_SFR_IO_ADDR(SREG)), "r"(port_saved_sreg)
-                         : "memory");
-  }
-}
-
-/**
- * Enable interrupts globally.
- */
-static inline void port_enable_interrupts(void) { sei(); }
-
-/**
- * Disable interrupts globally.
- */
-static inline void port_disable_interrupts(void) { cli(); }
-
-/* ========================================================================
- * ATOMIC OPERATIONS
- * ======================================================================== */
-
-static inline uint8_t port_atomic_inc_u8(volatile uint8_t *ptr) {
-  uint8_t result;
-  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-    (*ptr)++;
-    result = *ptr;
-  }
-  return result;
-}
-
-static inline uint8_t port_atomic_dec_u8(volatile uint8_t *ptr) {
-  uint8_t result;
-  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-    (*ptr)--;
-    result = *ptr;
-  }
-  return result;
-}
-
-static inline bool port_atomic_cas_u8(volatile uint8_t *ptr, uint8_t expected,
-                                      uint8_t desired) {
-  bool success = false;
-  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-    if (*ptr == expected) {
-      *ptr = desired;
-      success = true;
-    }
-  }
-  return success;
-}
 
 /* ========================================================================
  * STACK UTILITIES
  * ======================================================================== */
-
-/**
- * Get current stack pointer.
- */
-static inline void *port_get_stack_pointer(void) {
-  uint16_t sp = SPL | (SPH << 8);
-  return (void *)sp;
-}
 
 /* ========================================================================
  * WATCHDOG TIMER MAPPINGS
@@ -207,11 +120,6 @@ uint32_t port_get_tick(void);
  * Fast stack zeroing (AVR assembly optimization).
  */
 uint8_t *port_fast_zero_stack(uint8_t *sp, uint8_t count);
-
-/**
- * Enter idle mode (AVR sleep).
- */
-void port_enter_idle(void);
 
 /**
  * Watchdog timer operations.

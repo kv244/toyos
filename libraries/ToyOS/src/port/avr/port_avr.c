@@ -13,13 +13,11 @@
 
 #include "port_avr.h"
 #include "../../port.h"
+#include <stdbool.h>
+#include <stdint.h>
 #include <string.h>
 
-/* ========================================================================
- * GLOBAL VARIABLES
- * ======================================================================== */
-
-/* Critical section nesting counter */
+/* Global states for nesting and interrupts */
 volatile uint8_t port_critical_nesting = 0;
 volatile uint8_t port_saved_sreg = 0;
 
@@ -211,17 +209,6 @@ ISR(TIMER1_COMPA_vect, ISR_NAKED) {
 /* ========================================================================
  * LOW POWER / IDLE
  * ======================================================================== */
-
-/**
- * Enter idle mode (AVR sleep).
- */
-void port_enter_idle(void) {
-  set_sleep_mode(SLEEP_MODE_IDLE);
-  sleep_enable();
-  sei(); /* Enable interrupts before sleep */
-  sleep_cpu();
-  sleep_disable();
-}
 
 /* ========================================================================
  * WATCHDOG TIMER
