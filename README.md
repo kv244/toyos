@@ -1,10 +1,16 @@
 # ToyOS - Tiny Operating System for Arduino
 
-**Version 2.5 - MULTI-PLATFORM (AVR + ARM Cortex-M)**
-**Status:** ✅ Production Ready for Hobbyist/Education
-**Last Updated:** January 2026
+**Version 2.5.1 - MULTI-PLATFORM (AVR + ARM Cortex-M)**  
+**Status:** ✅ Production Ready for Hobbyist/Education  
+**Last Updated:** January 31, 2026
 
-ToyOS is a lightweight, preemptive Real-Time Operating System (RTOS) designed for embedded systems. It now supports multiple architectures including **Arduino UNO (AVR)** and **Arduino UNO R4 (ARM Cortex-M4)**. It provides priority-based multitasking, inter-process communication, efficient resource management, and a persistent key-value database.
+ToyOS is a lightweight, preemptive Real-Time Operating System (RTOS) designed for embedded systems. It supports multiple architectures including **Arduino UNO (AVR)** and **Arduino UNO R4 (ARM Cortex-M4)** with a unified CPU abstraction layer for maximum performance. Features include priority-based multitasking, inter-process communication, efficient resource management, and a persistent key-value database.
+
+**Recent Improvements (v2.5.1):**
+- ✅ **CPU Port Abstraction** - Unified inline primitives for zero-overhead cross-platform support
+- ✅ **Source Tree Cleanup** - Professional repository structure with comprehensive documentation
+- ✅ **Code Quality Enhancements** - Explicit error handling and symbolic constants
+- ✅ **Comprehensive Analysis** - Detailed codebase review with improvement roadmap
 
 ---
 
@@ -94,6 +100,26 @@ toyos/
 - **Inline Performance**: Critical path functions use inline assembly/intrinsics  
 - **Zero Overhead Abstraction**: Platform detection at compile-time
 - **Documentation**: Each major subsystem has its own README
+
+---
+
+## 📚 Documentation
+
+ToyOS includes comprehensive documentation at multiple levels:
+
+### Core Documentation
+- **README.md** (this file) - Project overview and quick start guide
+- **CODE_QUALITY_SUMMARY.md** - Detailed quality analysis and metrics
+- **CODEBASE_ANALYSIS.md** - Comprehensive improvement recommendations
+
+### Subsystem Documentation
+- **port/README.md** - Porting layer architecture and platform guide
+- **hal/README.md** - Hardware abstraction layer documentation
+
+### Development Guides
+- **CLEANUP_SUMMARY.md** - Source tree organization report
+
+**Code Quality Grade: A- (Excellent with minor improvements)**
 
 ---
 

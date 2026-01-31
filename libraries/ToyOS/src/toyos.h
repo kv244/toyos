@@ -25,8 +25,8 @@
 /* ToyOS Version */
 #define TOYOS_VERSION_MAJOR 2
 #define TOYOS_VERSION_MINOR 5
-#define TOYOS_VERSION_PATCH 0
-#define TOYOS_VERSION_STRING "2.5.0"
+#define TOYOS_VERSION_PATCH 1
+#define TOYOS_VERSION_STRING "2.5.1"
 
 #include <stddef.h>
 #include <stdint.h>
