@@ -5,10 +5,6 @@
 #include <avr/wdt.h>
 #include <util/atomic.h>
 
-/* Static Task Pool - no dynamic allocation overhead */
-static TaskNode task_pool[MAX_TASKS];
-static uint8_t task_pool_index = 0;
-
 /* Global Kernel Instance */
 static Kernel kernel = {0};
 
@@ -21,12 +17,11 @@ extern "C" {
 void fast_zero_stack(uint8_t *sp, uint8_t count);
 }
 
-/* Inline helper: get task node from static pool */
-static inline TaskNode *get_task_node(void) __attribute__((always_inline));
+/* Helper: allocate task node from heap */
 static inline TaskNode *get_task_node(void) {
-  if (task_pool_index >= MAX_TASKS)
+  if (kernel.task_count >= MAX_TASKS)
     return NULL;
-  return &task_pool[task_pool_index++];
+  return (TaskNode *)os_malloc(sizeof(TaskNode));
 }
 
 /* Task Stack Initialization - FIXED: Proper stack layout for context restore */
@@ -68,14 +63,74 @@ static uint8_t *os_init_stack(uint16_t stack_size, void (*task_func)(void),
   return sp;
 }
 
-/* Block Header for Free List Allocator */
-typedef struct BlockHeader {
-  uint16_t size; /* Size of the user data following this header */
-  struct BlockHeader
-      *next; /* Pointer to the next FREE block (NULL if allocated) */
-} BlockHeader;
+/* --- Buddy Memory Allocator (v2) --- */
 
-/* Initialize the OS and Memory Manager */
+/*
+ * This version of the buddy allocator includes a header on EVERY block
+ * (both allocated and free). This allows for a constant-time O(1) check
+ * to see if a buddy block is free, which simplifies coalescing logic and
+ * ensures deterministic performance.
+ */
+
+#define BUDDY_MIN_EXPONENT 4     // Smallest block is 2^4 = 16 bytes
+#define BUDDY_MAX_POOL_SIZE 1024 // Adjusted to match user's pool
+#define BUDDY_MAX_EXPONENT 10    // 2^10 = 1024 bytes
+#define BUDDY_NUM_LISTS (BUDDY_MAX_EXPONENT - BUDDY_MIN_EXPONENT + 1)
+
+/* Header for ALL blocks, plus free list pointers */
+typedef struct Block {
+  bool is_free;
+  uint8_t exponent;
+  struct Block *next_free;
+  struct Block *prev_free;
+} Block;
+
+/* State for the memory manager. */
+static struct {
+  uint8_t *pool_start;
+  uint16_t pool_size;
+  Block *free_lists[BUDDY_NUM_LISTS];
+} mem;
+
+/* Helper to get the 0-based index for a given exponent. */
+static inline uint8_t get_list_idx(uint8_t exponent) {
+  if (exponent < BUDDY_MIN_EXPONENT)
+    exponent = BUDDY_MIN_EXPONENT;
+  return exponent - BUDDY_MIN_EXPONENT;
+}
+
+/* Add a block to the front of its free list. */
+static void add_to_freelist(Block *block) {
+  uint8_t idx = get_list_idx(block->exponent);
+
+  block->is_free = true;
+  block->prev_free = NULL;
+  block->next_free = mem.free_lists[idx];
+  if (mem.free_lists[idx]) {
+    mem.free_lists[idx]->prev_free = block;
+  }
+  mem.free_lists[idx] = block;
+}
+
+/* Remove a block from its free list. */
+static void remove_from_freelist(Block *block) {
+  uint8_t idx = get_list_idx(block->exponent);
+
+  if (block->prev_free) {
+    block->prev_free->next_free = block->next_free;
+  } else {
+    mem.free_lists[idx] = block->next_free;
+  }
+  if (block->next_free) {
+    block->next_free->prev_free = block->prev_free;
+  }
+  block->is_free = false;
+}
+
+/*
+  Initialize the OS and Memory Manager.
+  This version uses a Buddy Allocator.
+*/
 void os_init(uint8_t *mem_pool, uint16_t mem_size) {
   /* Zero out kernel state */
   kernel.ready_heap.size = 0;
@@ -87,113 +142,153 @@ void os_init(uint8_t *mem_pool, uint16_t mem_size) {
   kernel.system_tick = 0;
   kernel.task_count = 0;
 
-  /* Initialize Free List Memory Manager */
-  uintptr_t start_addr = (uintptr_t)mem_pool;
-
-  /* Ensure 2-byte alignment */
-  if (start_addr % 2 != 0) {
-    start_addr++;
-    mem_size--;
+  for (int i = 0; i < MAX_TASKS; i++) {
+    kernel.all_tasks[i] = NULL;
   }
 
-  /* Initial free block covers the entire pool */
-  BlockHeader *first_block = (BlockHeader *)start_addr;
-  first_block->size = mem_size - sizeof(BlockHeader);
-  first_block->next = NULL;
+  /* Initialize Buddy Allocator */
+  for (int i = 0; i < BUDDY_NUM_LISTS; i++) {
+    mem.free_lists[i] = NULL;
+  }
 
-  kernel.mem_manager.free_list_head = (void *)first_block;
+  mem.pool_start = mem_pool;
+  mem.pool_size = mem_size;
 
-  /* Reset task pool index */
-  task_pool_index = 0;
+  // Create initial free blocks
+  uint16_t remaining_size = mem.pool_size;
+  uintptr_t current_offset = 0;
+
+  for (int8_t exp = BUDDY_MAX_EXPONENT; exp >= BUDDY_MIN_EXPONENT; exp--) {
+    uint16_t block_size = 1 << exp;
+    while (remaining_size >= block_size) {
+      Block *block = (Block *)(mem.pool_start + current_offset);
+      block->exponent = exp;
+      add_to_freelist(block);
+      current_offset += block_size;
+      remaining_size -= block_size;
+    }
+  }
+
+  /* Reset system tick count */
+  kernel.system_tick = 0;
 }
 
-// ... heap helpers omitted (unchanged) ...
-
-/* Memory Allocation - First Fit Strategy */
+/* Memory Allocation using Buddy System */
 void *os_malloc(uint16_t size) {
   if (size == 0)
     return NULL;
 
-  /* Align size to 2-byte boundary */
-  if (size % 2 != 0)
-    size++;
+  // Total size needed for a block must be at least sizeof(Block)
+  // to hold free list pointers. User data fits after the header.
+  uint16_t required_block_size = size + sizeof(Block);
 
-  BlockHeader *prev = NULL;
-  BlockHeader *curr = (BlockHeader *)kernel.mem_manager.free_list_head;
-
-  while (curr != NULL) {
-    if (curr->size >= size) {
-      /* Found a fit! Check if we can split */
-      if (curr->size >= size + sizeof(BlockHeader) + 4) {
-        /* SPLIT: Create new free block from remainder */
-        BlockHeader *new_block =
-            (BlockHeader *)((uint8_t *)curr + sizeof(BlockHeader) + size);
-        new_block->size = curr->size - size - sizeof(BlockHeader);
-        new_block->next = curr->next;
-
-        /* Update current block size */
-        curr->size = size;
-        curr->next = new_block; /* temporary link for insertion logic below */
-      }
-
-      /* Remove 'curr' from free list */
-      if (prev) {
-        prev->next = curr->next;
-      } else {
-        kernel.mem_manager.free_list_head = curr->next;
-      }
-
-      /* Mark as allocated */
-      curr->next = NULL;
-
-      /* Return pointer to user data */
-      return (void *)((uint8_t *)curr + sizeof(BlockHeader));
+  // Find the smallest power-of-2 exponent that can hold the required size
+  uint8_t exponent = BUDDY_MIN_EXPONENT;
+  while ((1 << exponent) < required_block_size) {
+    exponent++;
+    if (exponent > BUDDY_MAX_EXPONENT) {
+      return NULL; // Request too large
     }
-    prev = curr;
-    curr = curr->next;
   }
-  return NULL; /* Out of memory */
+
+  ATOMIC_START();
+
+  // Find a free block, starting from the best fit and going up
+  uint8_t original_exp = exponent;
+  uint8_t current_exp = exponent;
+  Block *block = NULL;
+
+  while (current_exp <= BUDDY_MAX_EXPONENT) {
+    uint8_t list_idx = get_list_idx(current_exp);
+    if (mem.free_lists[list_idx]) {
+      block = mem.free_lists[list_idx];
+      break; // Found a block
+    }
+    current_exp++;
+  }
+
+  if (!block) {
+    ATOMIC_END();
+    return NULL; // Out of memory
+  }
+
+  // Pull the block from its list and split it down to the required size
+  remove_from_freelist(block);
+
+  while (current_exp > original_exp) {
+    current_exp--;
+    block->exponent = current_exp;
+    uint16_t block_size = 1 << current_exp;
+
+    // The other half becomes a new free buddy block
+    Block *buddy = (Block *)((uint8_t *)block + block_size);
+    buddy->exponent = current_exp;
+    add_to_freelist(buddy);
+  }
+
+  ATOMIC_END();
+
+  // Return a pointer to the user data area, after the block header
+  return (void *)((uint8_t *)block + sizeof(Block));
 }
 
-/* Memory Deallocation - Coalescing Strategy */
+/* Memory Deallocation using Buddy System */
 void os_free(void *ptr) {
   if (!ptr)
     return;
 
-  /* Recover header */
-  BlockHeader *block = (BlockHeader *)((uint8_t *)ptr - sizeof(BlockHeader));
+  ATOMIC_START();
 
-  /* Insert into sorted free list */
-  BlockHeader *prev = NULL;
-  BlockHeader *curr = (BlockHeader *)kernel.mem_manager.free_list_head;
+  // Get a pointer to the block header from the user pointer
+  Block *block = (Block *)((uint8_t *)ptr - sizeof(Block));
 
-  /* Find insertion point (sorted by address) */
-  while (curr != NULL && curr < block) {
-    prev = curr;
-    curr = curr->next;
+  // Basic sanity check to prevent freeing already free blocks or corrupted
+  // pointers
+  if (block->is_free || (uint8_t *)block < mem.pool_start ||
+      (uint8_t *)block >= (mem.pool_start + mem.pool_size)) {
+    ATOMIC_END();
+    return;
   }
 
-  /* Insert */
-  if (prev) {
-    prev->next = block;
-  } else {
-    kernel.mem_manager.free_list_head = block;
-  }
-  block->next = curr;
+  uint8_t exponent = block->exponent;
 
-  /* Coalesce with NEXT block */
-  if (curr && ((uint8_t *)block + sizeof(BlockHeader) + block->size) ==
-                  (uint8_t *)curr) {
-    block->size += sizeof(BlockHeader) + curr->size;
-    block->next = curr->next;
+  // Coalescing loop: merge with buddies if they are free
+  while (exponent < BUDDY_MAX_EXPONENT) {
+    uint16_t block_size = 1 << exponent;
+    uintptr_t block_offset = (uint8_t *)block - mem.pool_start;
+
+    // Calculate the buddy's address
+    uintptr_t buddy_offset = block_offset ^ block_size;
+
+    // Safety check: Buddy MUST be within the pool
+    if (buddy_offset + block_size > mem.pool_size) {
+      break;
+    }
+
+    Block *buddy = (Block *)(mem.pool_start + buddy_offset);
+
+    // Check if the buddy is free and has the same size
+    if (buddy->is_free && buddy->exponent == exponent) {
+      remove_from_freelist(buddy);
+
+      // The new, larger block starts at the address of the lower-addressed
+      // buddy
+      if (buddy_offset < block_offset) {
+        block = buddy;
+      }
+
+      // Increment the exponent for the new, larger block and repeat
+      exponent++;
+      block->exponent = exponent;
+    } else {
+      break; // Buddy is not free or wrong size, so stop coalescing
+    }
   }
 
-  /* Coalesce with PREV block */
-  if (prev && ((uint8_t *)prev + sizeof(BlockHeader) + prev->size) ==
-                  (uint8_t *)block) {
-    prev->size += sizeof(BlockHeader) + block->size;
-    prev->next = block->next;
-  }
+  // Add the final (potentially larger) block to the correct free list
+  add_to_freelist(block);
+
+  ATOMIC_END();
 }
 
 /* Binary Heap Helpers - with assertions */
@@ -454,8 +549,8 @@ void os_create_task(uint8_t id, void (*task_func)(void), uint8_t priority,
   uint32_t *canary_ptr = NULL;
   uint8_t *sp = os_init_stack(stack_size, task_func, &canary_ptr);
   if (!sp) {
-    /* Failed to allocate stack - return node to pool */
-    task_pool_index--;
+    /* Failed to allocate stack - free the node */
+    os_free(new_node);
     return;
   }
 
@@ -481,6 +576,7 @@ void os_create_task(uint8_t id, void (*task_func)(void), uint8_t priority,
 
   /* Add to ready heap with atomic protection */
   ATOMIC_START();
+  kernel.all_tasks[kernel.task_count] = new_node;
   heap_push(new_node);
   kernel.task_count++;
   ATOMIC_END();
@@ -863,8 +959,8 @@ void os_wdt_feed(void) { wdt_reset(); }
 uint16_t os_get_stack_usage(uint8_t task_id) {
   TaskNode *node = NULL;
   for (uint8_t i = 0; i < MAX_TASKS; i++) {
-    if (task_pool[i].task.id == task_id) {
-      node = &task_pool[i];
+    if (kernel.all_tasks[i] && kernel.all_tasks[i]->task.id == task_id) {
+      node = kernel.all_tasks[i];
       break;
     }
   }
@@ -885,8 +981,8 @@ uint16_t os_get_stack_usage(uint8_t task_id) {
 
 uint8_t os_get_priority(uint8_t task_id) {
   for (uint8_t i = 0; i < MAX_TASKS; i++) {
-    if (task_pool[i].task.id == task_id) {
-      return task_pool[i].task.priority;
+    if (kernel.all_tasks[i] && kernel.all_tasks[i]->task.id == task_id) {
+      return kernel.all_tasks[i]->task.priority;
     }
   }
   return 0;

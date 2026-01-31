@@ -39,7 +39,7 @@ extern "C" {
  * Memory impact: ~40 bytes per task in static pool
  * Adjust based on available SRAM (2KB on ATmega328P)
  */
-#define MAX_TASKS 8
+#define MAX_TASKS 4
 
 /**
  * Default stack size for tasks (in bytes).
@@ -484,9 +484,9 @@ typedef struct {
   TaskQueue blocked_queue;        /**< Delta queue of delayed tasks */
   TaskControlBlock *current_task; /**< Currently running task */
   TaskNode *current_node;         /**< Node pointer for current task */
-  MemoryManager mem_manager;      /**< Bump allocator state */
   volatile uint32_t system_tick;  /**< Milliseconds since os_start() */
   uint8_t task_count;             /**< Total number of tasks created */
+  TaskNode *all_tasks[MAX_TASKS]; /**< Track all tasks for monitoring */
 } Kernel;
 
 /* ========================================================================

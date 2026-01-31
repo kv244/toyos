@@ -1,123 +1,131 @@
 #include "toyos.h"
 #include <Arduino.h>
-#include <avr/wdt.h>
 
-static uint8_t mem_pool[832] __attribute__((aligned(2)));
+// Use a larger memory pool for a more thorough test.
+// Reduced memory pool for better global SRAM availability.
+static uint8_t mem_pool[896] __attribute__((aligned(2)));
 
 Mutex serial_mutex;
-Mutex pi_mutex;
 
-/* Priority Inheritance Test Tasks */
-void task_low(void) {
-  os_mutex_lock(&pi_mutex);
+#define NUM_POINTERS 12
+
+/*
+ * This task stress-tests the buddy memory allocator.
+ * It repeatedly allocates and frees blocks of random sizes to check for
+ * correctness, fragmentation resistance, and memory corruption.
+ */
+void task_mem_test(void) {
+  void *pointers[NUM_POINTERS];
+  uint16_t sizes[NUM_POINTERS];
 
   os_mutex_lock(&serial_mutex);
-  Serial.print(F("[PI] Low locked. Base Prio: 1, Current Prio: "));
-  Serial.println(os_get_priority(20));
+  Serial.println(F("[MEMTEST] Memory test task starting."));
   os_mutex_unlock(&serial_mutex);
 
-  /* Long busy wait. During this:
-   * 1. Med (2) will preempt and run.
-   * 2. High (3) will preempt Med and try to lock.
-   * 3. High will boost Low to 3.
-   * 4. Low (3) will preempt Med (2) and finish its work.
-   */
-  for (volatile uint32_t i = 0; i < 1500000; i++)
-    ;
+  // Initialize pointer array
+  for (int i = 0; i < NUM_POINTERS; i++) {
+    pointers[i] = NULL;
+    sizes[i] = 0;
+  }
+
+  // Use an unconnected analog pin for a random seed
+  randomSeed(analogRead(A0));
+
+  // Run a number of allocation/deallocation cycles
+  for (int cycle = 0; cycle < 100; cycle++) {
+    int i = random(NUM_POINTERS); // Pick a random slot
+
+    if (pointers[i] != NULL) {
+      // Slot is in use, so free it.
+      // First, verify its contents.
+      bool ok = true;
+      for (uint16_t j = 0; j < sizes[i]; j++) {
+        if (((uint8_t *)pointers[i])[j] != (uint8_t)i) {
+          ok = false;
+          break;
+        }
+      }
+
+      if (!ok) {
+        os_mutex_lock(&serial_mutex);
+        Serial.println(F("!!! CORRUPTION DETECTED !!!"));
+        os_mutex_unlock(&serial_mutex);
+        // Stop test on corruption
+        while (1)
+          os_delay(5000);
+      }
+
+      os_free(pointers[i]);
+
+      os_mutex_lock(&serial_mutex);
+      Serial.print(cycle);
+      Serial.print(F(": Freed block in slot "));
+      Serial.println(i);
+      os_mutex_unlock(&serial_mutex);
+
+      pointers[i] = NULL;
+      sizes[i] = 0;
+
+    } else {
+      // Slot is free, so allocate a new block.
+      uint16_t size = random(8, 128);
+      pointers[i] = os_malloc(size);
+
+      os_mutex_lock(&serial_mutex);
+      Serial.print(cycle);
+      if (pointers[i] != NULL) {
+        sizes[i] = size;
+        // Fill the new block with a known pattern (based on its index)
+        memset(pointers[i], (uint8_t)i, size);
+        Serial.print(F(": Allocated "));
+        Serial.print(size);
+        Serial.print(F(" bytes for slot "));
+        Serial.println(i);
+      } else {
+        Serial.print(F(": FAILED to allocate "));
+        Serial.print(size);
+        Serial.println(F(" bytes."));
+      }
+      os_mutex_unlock(&serial_mutex);
+    }
+    os_delay(50); // Small delay between operations
+  }
 
   os_mutex_lock(&serial_mutex);
-  Serial.print(F("[PI] Low finished loop. Current Prio: "));
-  Serial.println(os_get_priority(20));
-  Serial.print(F("[PI] Stack Usage (Low): "));
-  Serial.println(os_get_stack_usage(20));
-  os_mutex_unlock(&serial_mutex);
-
-  os_mutex_unlock(&pi_mutex);
-
-  os_mutex_lock(&serial_mutex);
-  Serial.print(F("[PI] Low released mutex. Restored Prio: "));
-  Serial.println(os_get_priority(20));
-  os_mutex_unlock(&serial_mutex);
-
-  while (1)
-    os_delay(1000);
-}
-
-void task_med(void) {
-  os_delay(100); // Start after Low locks
-  os_mutex_lock(&serial_mutex);
-  Serial.println(F("[PI] Med woke up and preempted Low."));
+  Serial.println(F("[MEMTEST] Test finished successfully."));
   os_mutex_unlock(&serial_mutex);
 
   while (1) {
-    /* Busy loop to show priority levels.
-     * If PI works, Low will preempt this even though Low's base is 1 < 2.
-     * If PI FAILS, this will run forever and High will never get the lock.
-     */
-    os_wdt_feed(); // Specifically feed here so it doesn't reset during Med's
-                   // turn
+    os_delay(1000);
   }
 }
 
-void task_high(void) {
-  os_delay(200); // Start after Med
-  os_mutex_lock(&serial_mutex);
-  Serial.println(F("[PI] High woke up and trying to lock mutex..."));
-  os_mutex_unlock(&serial_mutex);
-
-  os_mutex_lock(&pi_mutex);
-
-  os_mutex_lock(&serial_mutex);
-  Serial.println(F("[PI] High GOT lock! PI Success."));
-  Serial.print(F("[PI] Stack Usage (High): "));
-  Serial.println(os_get_stack_usage(22));
-  os_mutex_unlock(&serial_mutex);
-
-  os_mutex_unlock(&pi_mutex);
-  while (1)
-    os_delay(1000);
-}
-
 void task_idle(void) {
-  static uint16_t idle_count = 0;
   while (1) {
-    os_wdt_feed();
     os_check_stack_overflow();
-
-    if (++idle_count >= 1000) {
-      os_mutex_lock(&serial_mutex);
-      Serial.println(F("[IDLE] System free."));
-      os_mutex_unlock(&serial_mutex);
-      idle_count = 0;
-    }
-
     os_enter_idle();
   }
 }
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
   while (!Serial)
     ;
+  delay(1000); // Wait for serial to connect
 
-  Serial.println(F("ToyOS V2.4 - Priority Inheritance Test"));
-  Serial.println(F("======================================="));
+  Serial.println(F("ToyOS V2.5 - Buddy Allocator Stress Test"));
+  Serial.println(F("========================================="));
   Serial.flush();
 
   os_init(mem_pool, sizeof(mem_pool));
   os_mutex_init(&serial_mutex);
-  os_mutex_init(&pi_mutex);
 
-  /* Init Watchdog - 8s for safe PI test */
-  os_wdt_init(WDTO_8S);
-
-  /* Create tasks: L(1), M(2), H(3) */
-  os_create_task(20, task_low, 1, 144);
-  os_create_task(21, task_med, 2, 144);
-  os_create_task(22, task_high, 3, 144);
+  os_create_task(1, task_mem_test, 1, 256);
   os_create_task(0, task_idle, 0, 80);
 
   os_start();
 }
 
-void loop() {}
+void loop() {
+  // Should not be reached.
+}
