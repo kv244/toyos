@@ -52,30 +52,48 @@ ToyOS is a lightweight, preemptive Real-Time Operating System (RTOS) designed fo
 
 ```
 toyos/
-├── libraries/
-│   ├── ToyOS/              # Core RTOS library
-│   │   ├── src/
-│   │   │   ├── toyos.h              # API & configuration
-│   │   │   ├── port.h               # Portability Interface
-│   │   │   ├── os_kernel_fixed.cpp  # Portable Kernel
-│   │   │   └── port/                # Hardware Ports
-│   │   │       ├── avr/             # AVR Implementation
-│   │   │       └── arm/             # ARM Cortex-M Implementation
-│   │   └── library.properties
-│   └── KV_DB/              # Key-Value Database library
-│       ├── src/
-│       │   ├── kv_db.h              # Database API
-│       │   ├── hal/                 # Storage Drivers
-│       │       ├── storage_driver.h
-│       │       ├── storage_avr_eeprom.c
-│       │       └── storage_arduino_eeprom.cpp
-│       │   ├── kv_db.cpp            # Implementation
-│       │   └── test_kv_db.cpp       # Test suite
-│       └── library.properties
-└── app/
-    └── kv_db_demo/         # Demo application
-        └── kv_db_demo.ino
+├── .gitignore                      # Build artifacts exclusion
+├── README.md                       # Project documentation
+├── CODE_QUALITY_SUMMARY.md         # Code quality report
+├── app/                            # Application examples
+│   └── kv_db_demo/                 # KV database demo
+│       └── kv_db_demo.ino
+└── libraries/
+    ├── ToyOS/                      # Core RTOS library
+    │   ├── library.properties
+    │   └── src/
+    │       ├── toyos.h             # Main RTOS API
+    │       ├── toyos_config.h      # Configuration
+    │       ├── os_kernel_fixed.cpp # Kernel implementation
+    │       ├── port.h              # Unified porting interface
+    │       ├── port/               # Platform abstraction layer
+    │       │   ├── README.md       # Porting guide
+    │       │   ├── cpu_port.h      # CPU primitives (inline)
+    │       │   ├── avr/            # AVR (ATmega328P) port
+    │       │   │   ├── port_avr.h
+    │       │   │   ├── port_avr.c
+    │       │   │   └── port_avr_asm.S
+    │       │   └── arm/            # ARM Cortex-M port
+    │       │       ├── port_arm.h
+    │       │       └── port_arm.c
+    │       └── hal/                # Hardware abstraction layer
+    │           ├── README.md       # HAL documentation
+    │           ├── storage_driver.h/c      # Unified storage API
+    │           ├── storage_avr_eeprom.h/c  # Native AVR EEPROM
+    │           └── storage_arduino_eeprom.h/cpp  # Arduino library wrapper
+    └── KV_DB/                      # Key-Value database library
+        ├── library.properties
+        └── src/
+            ├── kv_db.h             # Database API
+            └── kv_db.c             # Implementation
 ```
+
+### Design Principles
+
+- **Separation of Concerns**: Kernel, HAL, and platform code are cleanly separated
+- **Inline Performance**: Critical path functions use inline assembly/intrinsics  
+- **Zero Overhead Abstraction**: Platform detection at compile-time
+- **Documentation**: Each major subsystem has its own README
 
 ---
 

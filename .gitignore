@@ -1,0 +1,28 @@
+# Build artifacts
+*.txt
+*.log
+*.o
+*.a
+*.elf
+*.hex
+*.bin
+
+# Arduino build directories
+build/
+.build/
+atmega328p/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
