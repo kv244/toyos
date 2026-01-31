@@ -39,7 +39,7 @@ extern "C" {
  * Memory impact: ~40 bytes per task in static pool
  * Adjust based on available SRAM (2KB on ATmega328P)
  */
-#define MAX_TASKS 8
+#define MAX_TASKS 6
 
 /**
  * Default stack size for tasks (in bytes).
@@ -47,7 +47,7 @@ extern "C" {
  * Typical: 96-128 bytes
  * Stack grows downward on AVR.
  */
-#define DEFAULT_STACK_SIZE 128
+#define DEFAULT_STACK_SIZE 96
 
 /**
  * Minimum stack size allowed (safety check).

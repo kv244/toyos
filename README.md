@@ -1,16 +1,16 @@
 # ToyOS - Tiny Operating System for Arduino
 
-**Version 2.4 - ADVANCED RTOS FEATURES**
-**Status:** ✅ Production Ready for Hobbyist/Edu
+**Version 2.4 - ADVANCED RTOS FEATURES + KV Database**
+**Status:** ✅ Production Ready for Hobbyist/Education
 **Last Updated:** January 2026
 
-ToyOS is a lightweight, preemptive Real-Time Operating System (RTOS) designed specifically for the Arduino UNO (ATmega328P). It provides priority-based multitasking, inter-process communication, and efficient resource management while maintaining a minimal memory footprint.
+ToyOS is a lightweight, preemptive Real-Time Operating System (RTOS) designed specifically for the Arduino UNO (ATmega328P). It provides priority-based multitasking, inter-process communication, efficient resource management, and a persistent key-value database while maintaining a minimal memory footprint.
 
 ---
 
 ## 🌟 Features
 
-### Core Features
+### Core RTOS Features
 - ✅ **Priority-Based Preemptive Scheduling**: Uses binary heap for O(log N) task selection.
 - ✅ **Priority Inheritance Protocol**: Prevents priority inversion for Mutexes.
 - ✅ **Watchdog Timer Integration**: Hardware recovery from system hangs.
@@ -19,16 +19,23 @@ ToyOS is a lightweight, preemptive Real-Time Operating System (RTOS) designed sp
 - ✅ **Delta Queue Delays**: O(1) tick processing for sleeping tasks.
 - ✅ **Optimized Context Switching**: Hand-coded assembly for minimal overhead (~35 cycles).
 
+### KV Database (NEW)
+- ✅ **EEPROM Persistence**: 1KB storage on Arduino UNO.
+- ✅ **Thread-Safe CRUD Operations**: Read, Write, Delete with Mutex protection.
+- ✅ **Log-Structured Storage**: Append-only writes for simplicity.
+- ✅ **Configurable Limits**: Keys up to 24 chars, values up to 1024 bytes.
+- ✅ **Comprehensive Test Suite**: Unit, edge-case, and concurrency tests.
+
 ### Synchronization Primitives
 - ✅ **Semaphores**: Counting semaphores for resource coordination.
-- ✅ **Mutexes**: Binary mutexes for data protection.
+- ✅ **Mutexes**: Binary mutexes with priority inheritance for data protection.
 - ✅ **Message Queues**: Thread-safe data passing with "Fast Path" optimization (75% fewer context switches).
 
 ### Memory Efficiency
 - **Dynamic Memory**: `os_malloc` / `os_free` with Coalescing (First-Fit Free List).
-- **Stackless Scheduler**: Uses task stacks directly.
+- **Optimized Memory Usage**: 512-byte pool + 6-task limit = 61% SRAM usage (down from 79%).
 - **Flash Strings**: `F()` macro support to save SRAM.
-- **Low Footprint**: ~4KB Flash, ~1KB SRAM (leaving ~1KB for user app).
+- **Low Footprint**: ~9KB Flash, ~1.3KB SRAM (leaving ~700 bytes for user apps).
 
 ### Robustness
 - **Atomic Startup**: Prevents race conditions during initialization.
@@ -36,130 +43,267 @@ ToyOS is a lightweight, preemptive Real-Time Operating System (RTOS) designed sp
 
 ---
 
-## 🏗️ Architecture
+## 🏗️ Project Structure
 
-The system consists of four main components:
-1.  **`toyos.h`**: core configurations and API definitions.
-2.  **`os_kernel_fixed.cpp`**: The kernel logic (scheduler, IPC, Free List Allocator).
-3.  **`os_switch_fixed.S`**: Hand-optimized assembly for context switching.
-4.  **`toyos.ino`**: The main application file (sketch).
-
-### Scheduler Flow
-1. **Priority-Based**: Binary max-heap selects highest priority task.
-2. **Preemptive**: Timer1 interrupt (1ms) triggers context switch.
-3. **Delta Queue**: Sleeping tasks are stored in a differential list for O(1) wake-up.
+```
+toyos/
+├── libraries/
+│   ├── ToyOS/              # Core RTOS library
+│   │   ├── src/
+│   │   │   ├── toyos.h              # API & configuration
+│   │   │   ├── os_kernel_fixed.cpp  # Kernel implementation
+│   │   │   └── os_switch_fixed.S    # Assembly context switch
+│   │   └── library.properties
+│   └── KV_DB/              # Key-Value Database library
+│       ├── src/
+│       │   ├── kv_db.h              # Database API
+│       │   ├── kv_db.cpp            # Implementation
+│       │   └── test_kv_db.cpp       # Test suite
+│       └── library.properties
+└── app/
+    └── kv_db_demo/         # Demo application
+        └── kv_db_demo.ino
+```
 
 ---
 
 ## 🚀 Quick Start
 
 ### 1. Requirements
-- Arduino IDE or `arduino-cli`.
-- Arduino UNO (ATmega328P) or compatible.
+- **Arduino CLI** (recommended) or Arduino IDE
+- **Arduino UNO** (ATmega328P) or compatible board
+- **Serial Monitor** for output
 
-### 2. Compiling with arduino-cli
+### 2. Installing Arduino CLI (if needed)
+
+**Windows (PowerShell):**
+```powershell
+# Download and install
+Invoke-WebRequest -Uri https://downloads.arduino.cc/arduino-cli/arduino-cli_latest_Windows_64bit.zip -OutFile arduino-cli.zip
+Expand-Archive arduino-cli.zip -DestinationPath C:\arduino-cli
+$env:PATH += ";C:\arduino-cli"
+
+# Initialize and install AVR core
+arduino-cli core update-index
+arduino-cli core install arduino:avr
+```
+
+**Linux/macOS:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
+arduino-cli core update-index
+arduino-cli core install arduino:avr
+```
+
+### 3. Building the Project
+
+Navigate to the project directory and compile:
 
 ```bash
-# Compile
-arduino-cli compile --fqbn arduino:avr:uno .
+cd C:\Users\julia\Documents\toyos
+arduino-cli compile --fqbn arduino:avr:uno --libraries libraries app/kv_db_demo
+```
 
-# Upload (Windows Example)
-# Ensure to kill any Serial Monitor instances first to release the COM port lock
-taskkill /F /IM arduino-cli.exe
-arduino-cli upload -p COM6 --fqbn arduino:avr:uno .
+**Expected Output:**
+```
+Sketch uses 8798 bytes (27%) of program storage space.
+Global variables use 1268 bytes (61%) of dynamic memory, leaving 780 bytes for local variables.
+```
 
-# Monitor Output
+### 4. Uploading to Arduino
+
+**Step 1: Find your Arduino's COM port**
+```bash
+arduino-cli board list
+```
+
+**Step 2: Upload the sketch** (replace `COM6` with your port):
+```bash
+arduino-cli upload -p COM6 --fqbn arduino:avr:uno app/kv_db_demo
+```
+
+**On Linux/macOS**, the port will be something like `/dev/ttyACM0` or `/dev/ttyUSB0`:
+```bash
+arduino-cli upload -p /dev/ttyACM0 --fqbn arduino:avr:uno app/kv_db_demo
+```
+
+### 5. Monitoring Serial Output
+
+```bash
 arduino-cli monitor -p COM6 --config baudrate=9600
 ```
 
-### 3. Basic Example (Blinky)
-
-```cpp
-#include "toyos.h"
-#include <Arduino.h>
-
-/* Use aligned memory pool for correct malloc behavior */
-static uint8_t mem_pool[1024] __attribute__((aligned(2)));
-
-void task_blink(void) {
-  pinMode(13, OUTPUT);
-  while (1) {
-    digitalWrite(13, HIGH);
-    os_delay(500);
-    digitalWrite(13, LOW);
-    os_delay(500);
-  }
-}
-
-void setup() {
-  os_init(mem_pool, sizeof(mem_pool));
-  os_create_task(1, task_blink, 5, 128);
-  os_start();
-}
-
-void loop() {}
+**Expected Output:**
 ```
+--- Starting DB Test Suite ---
+[TEST] Basic CRUD: PASS
+[TEST] Persistence: PASS
+[TEST] Key too long limit: PASS
+[TEST] Value too long limit: PASS
+[TEST] Concurrency: PASS
+--- All Tests Passed ---
 
----
-
-## 🎮 Demo Application (Multi-Consumer & Allocator Test)
-
-The included `toyos.ino` demonstrates a **Producer-Consumer** pattern and **Dynamic Memory Test**:
-
-- **Producer Task**: Generates data AND tests `os_malloc`/`os_free` every second (stress test).
-- **Consumer Tasks 1 & 2**: Two tasks compete to read from the load-balanced message queue.
-- **Fast Path**: Uses `os_mq_send_fast` / `os_mq_receive_fast`.
-
-### Expected Serial Output
-```
-ToyOS V2.2 - Comprehensive Test Suite
-=====================================
-OS Init: OK
+[DB] Starting KV Database Demo...
+[DB] Writing key 'username' with value 'julia'...
+[DB] Write successful.
+[DB] Reading key 'username'...
+Read: julia
 ...
-Starting Pre-emptive Scheduler...
-Prod Sent: 0 @ Tick: 1
-Cons2 Got (Fast): 0
-Prod Sent: 1 @ Tick: 1001
-Cons1 Got (Fast): 1
 ```
 
 ---
 
-## 🔧 Configuration (toyos.h)
+## 📚 KV Database API
 
+### Initialization
+```cpp
+#include <kv_db.h>
+
+kv_result_t kv_init(void);  // Must be called once at startup
+```
+
+### CRUD Operations
+```cpp
+// Write (creates or updates)
+kv_result_t kv_write(const char* key, const char* value, uint16_t val_len);
+
+// Read
+kv_result_t kv_read(const char* key, char* buffer, uint16_t max_len, uint16_t* actual_len);
+
+// Delete
+kv_result_t kv_delete(const char* key);
+
+// Clear entire database
+kv_result_t kv_clear(void);
+```
+
+### Return Codes
+- `KV_SUCCESS`: Operation completed successfully
+- `KV_ERR_NOT_FOUND`: Key does not exist
+- `KV_ERR_FULL`: EEPROM is full
+- `KV_ERR_KEY_TOO_LONG`: Key exceeds 24 characters
+- `KV_ERR_VAL_TOO_LONG`: Value exceeds 1024 bytes
+
+### Example Usage
+```cpp
+#include <kv_db.h>
+#include <toyos.h>
+
+void task_demo(void) {
+  kv_init();
+  
+  // Write
+  const char* username = "alice";
+  kv_write("user", username, strlen(username));
+  
+  // Read
+  char buffer[32];
+  uint16_t len;
+  if (kv_read("user", buffer, sizeof(buffer), &len) == KV_SUCCESS) {
+    buffer[len] = '\0';
+    Serial.println(buffer);  // Prints: alice
+  }
+  
+  // Delete
+  kv_delete("user");
+}
+```
+
+---
+
+## 🎮 Demo Application
+
+The `kv_db_demo` application demonstrates:
+1. **Automated Test Suite**: Runs comprehensive tests on startup
+2. **Manual CRUD Operations**: Demonstrates write, read, update, and delete
+3. **Thread Safety**: Shows database access from RTOS tasks
+
+### Demo Flow
+1. Initializes ToyOS and KV Database
+2. Runs automated tests (CRUD, persistence, edge cases, concurrency)
+3. Performs manual operations on the `username` key
+4. Uses a watchdog-protected idle task
+
+---
+
+## 🔧 Configuration
+
+### ToyOS (toyos.h)
 | Constant | Default | Description |
 |----------|---------|-------------|
-| `MAX_TASKS` | 8 | Maximum number of concurrent tasks (1-32) |
-| `DEFAULT_STACK_SIZE` | 128 | Default stack size in bytes |
+| `MAX_TASKS` | 6 | Maximum concurrent tasks |
+| `DEFAULT_STACK_SIZE` | 96 | Default stack size in bytes |
 | `MIN_STACK_SIZE` | 48 | Minimum safety limit |
-| `STACK_CANARY` | 0xDEADBEEF | Overflow detection pattern |
+
+### KV Database (kv_db.h)
+| Constant | Default | Description |
+|----------|---------|-------------|
+| `KV_MAX_KEY_LEN` | 24 | Maximum key length |
+| `KV_MAX_VAL_LEN` | 1024 | Maximum value length |
+| `KV_EEPROM_SIZE` | 1024 | Total EEPROM size (Arduino UNO) |
+
+---
+
+## 🛠️ Troubleshooting
+
+### Compilation Fails
+- **Error:** `avr-gcc: not found`
+  - **Fix:** Install Arduino AVR core: `arduino-cli core install arduino:avr`
+
+### Upload Fails
+- **Error:** `Permission denied` or `Access is denied`
+  - **Fix (Windows):** Close Serial Monitor or any program using the COM port
+  - **Fix (Linux):** Add user to dialout group: `sudo usermod -a -G dialout $USER`
+
+### SRAM Issues
+- **Error:** `Low memory available, stability problems may occur`
+  - **Fix:** Reduce `mem_pool` size or use fewer tasks
+  - **Tip:** Use `F()` macro for constant strings to save SRAM
+
+### EEPROM Full
+- **Error:** `KV_ERR_FULL` when writing
+  - **Fix:** Call `kv_clear()` to reset the database
+  - **Note:** The log-structured design appends all writes; compaction is not implemented
 
 ---
 
 ## 📝 Version History
 
+### v2.4.1 (January 2026) - KV DATABASE
+- ✅ **New Feature**: Persistent key-value database with EEPROM storage
+- ✅ **Thread-Safe**: All operations protected with ToyOS Mutex
+- ✅ **Test Suite**: Comprehensive unit, edge-case, and concurrency tests
+- ✅ **Memory Optimization**: Reduced MAX_TASKS to 6, optimized mem_pool (61% SRAM usage)
+- ✅ **Bug Fix**: Fixed 1026-byte stack overflow in test suite
+
 ### v2.4 (January 2026) - ADVANCED FEATURES
-- ✅ **Priority Inheritance Protocol**: Added support for Mutex priority bumping.
-- ✅ **Starvation Safeguard**: Integrated hardware **Watchdog Timer**.
-- ✅ **Performance Tuning**: Added **Stack High-Water Mark tracking** via `os_get_stack_usage()`.
-- ✅ **Scalability**: Increased `MAX_TASKS` limit and optimized task pool.
+- ✅ **Priority Inheritance Protocol**: Added support for Mutex priority bumping
+- ✅ **Watchdog Timer Integration**: Hardware recovery from system hangs
+- ✅ **Stack High-Water Mark tracking**: Performance tuning via `os_get_stack_usage()`
 
 ### v2.3 (January 2026) - DYNAMIC MEMORY
-- ✅ **Dynamic Memory**: Replaced Bump Allocator with **Free List Allocator**.
-- ✅ **`os_free` Support**: Added support for freeing and coalescing memory blocks.
-- ✅ **Verification**: Added `malloc`/`free` stress tests improving Heap/Stack stability.
+- ✅ **Free List Allocator**: Replaced Bump Allocator with coalescing support
+- ✅ **`os_free` Support**: Memory can now be freed and reused
 
-### v2.2 (January 2026) - FIXED & OPTIMIZED
-- ✅ **Fixed Critical Bug**: Stack initialization order (PCH/PCL swap) preventing crashes.
-- ✅ **Fixed Race Condition**: Premature interrupt enabling during startup.
-- ✅ **Optimization**: Re-enabled "Fast Path" message queue operations.
-- ✅ **Multi-Consumer Demo**: Clean load-balancing example.
-
-### v2.1 (January 2026)
-- Initial production features (semaphores, mutexes).
+### v2.2 (January 2026) - STABILITY
+- ✅ **Fixed Critical Bug**: Stack initialization order (PCH/PCL swap)
+- ✅ **Fixed Race Condition**: Premature interrupt enabling during startup
 
 ---
 
 ## 📄 License
 
 MIT License. Use at your own risk.
+
+---
+
+## 🤝 Contributing
+
+This is an educational project. Feel free to fork, modify, and learn from the code!
+
+**Key Learning Areas:**
+- RTOS internals (scheduling, context switching, IPC)
+- AVR assembly programming
+- Memory management on constrained systems
+- EEPROM persistence and log-structured storage
+- Thread-safe programming with mutexes
