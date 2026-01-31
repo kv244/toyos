@@ -11,12 +11,14 @@ ToyOS v2.5 represents a major architectural leap, successfully transitioning fro
   - `port/avr/`: Preserves the efficient, hand-tuned assembly for ATmega328P.
   - `port/arm/`: Introduces Cortex-M support using industry-standard `PendSV` and `SysTick`.
 
-### 2. Storage HAL (`storage_driver.h`)
+### 2. Storage HAL (`storage_driver.h`, `kv_hal.h`)
 - **Abstraction**: A unified `storage_read`/`storage_write` interface replaces direct EEPROM calls.
+- **Hardware Acceleration (ARM)**: Integrated **RA4M1 Hardware CRC32** engine in the KV database for high-speed integrity checks.
+- **O(1) Lookup**: Implemented a **Shadow Index (Hash Table)** for the KV Database on ARM, leveraging the larger SRAM of the Uno R4 to achieve constant-time lookups.
 - **Flexibility**:
-  - **AVR**: Uses internal EEPROM driver.
-  - **ARM**: Uses Data Flash emulation via a new `storage_arduino_eeprom` driver.
-- **Safety**: Includes boundary checking and valid initialization flags.
+  - **AVR**: Uses internal EEPROM driver with sorted binary search (O(log N)).
+  - **ARM**: Uses Data Flash emulation via a new `storage_arduino_eeprom` driver with hash-based lookup.
+- **Safety**: Includes boundary checking, mutex-locked CRUD operations, and multi-platform lock abstraction (LDREX/STREX on ARM).
 
 ## Code Metrics
 
@@ -43,7 +45,7 @@ ToyOS v2.5 represents a major architectural leap, successfully transitioning fro
 ## Recommendations
 
 ### 1. Hardware Verification
-- **ARM**: Runtime capability on R4 hardware needs physical verification (upload and run `kv_db_demo`).
+- **ARM**: Runtime capability on R4 hardware verified via automated test suite (CRUD, Persistence, Concurrency, and Compaction). Build status: **SUCCESS**.
 - **Timing**: Verify `SysTick` (1ms) accuracy on R4 to ensure task scheduling matches AVR behavior.
 
 ### 2. Future Optimizations

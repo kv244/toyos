@@ -24,13 +24,12 @@ ToyOS is a lightweight, preemptive Real-Time Operating System (RTOS) designed fo
 
 ### KV Database (Storage HAL)
 - ✅ **Platform-Agnostic Storage**: Auto-selects driver based on board.
-  - **AVR**: Internal EEPROM
-  - **ARM (R4)**: Data Flash Emulation (via EEPROM.h)
-- ✅ **EEPROM Persistence**: 1KB indexable storage.
-- ✅ **Thread-Safe CRUD Operations**: Read, Write, Delete with Mutex protection.
-- ✅ **Log-Structured Storage**: Append-only writes for simplicity.
-- ✅ **Configurable Limits**: Keys up to 24 chars, values up to 1024 bytes.
-- ✅ **Comprehensive Test Suite**: Unit, edge-case, and concurrency tests.
+  - **AVR**: Internal EEPROM with Binary Search (O(log N)).
+  - **ARM (R4)**: Data Flash Emulation with **Shadow Index Hash Table (O(1))**.
+- ✅ **Hardware Acceleration**: Uses RA4M1 Hardware CRC32 engine for data integrity on ARM.
+- ✅ **EEPROM Persistence**: Thread-safe persistent storage.
+- ✅ **Full CRUD + Compaction**: Supported on all platforms with automated space reclamation.
+- ✅ **Comprehensive Test Suite**: Unit, edge-case, concurrency, and compaction tests.
 
 ### Synchronization Primitives
 - ✅ **Semaphores**: Counting semaphores for resource coordination.
@@ -332,9 +331,15 @@ Then enable it in your sketch:
 
 ## 📝 Version History
 
+### v2.5.1 (January 2026) - PORTABILITY REFINED
+- ✅ **O(1) ARM Performance**: Added Shadow Index (Hash Table) for constant-time lookups on R4.
+- ✅ **Hardware CRC32**: Integrated Renesas RA4M1 CRC hardware engine for KV Database.
+- ✅ **Stability Fixes**: Resolved multi-platform lock/mutex bugs in compaction and concurrency routines.
+- ✅ **Full Compaction**: Verified automated EEPROM space reclamation on all architectures.
+
 ### v2.5 (January 2026) - MULTI-PLATFORM
 - ✅ **ARM Cortex-M Port**: Full support for Arduino UNO R4 (PendSV/SysTick).
-- ✅ **Portability Layer**: Clean separate of Kernel and Hardware (`port.h`).
+- ✅ **Portability Layer**: Clean separation of Kernel and Hardware (`port.h`).
 - ✅ **Storage HAL**: Driver-based storage abstraction (AVR EEPROM / R4 Flash).
 - ✅ **Zero Regression**: 100% backward compatible with AVR.
 
