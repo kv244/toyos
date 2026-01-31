@@ -1,8 +1,8 @@
 #include "kv_db.h"
+#include "hal/storage_arduino_eeprom.h"
 #include "hal/storage_avr_eeprom.h"
 #include "hal/storage_driver.h"
 #include <string.h>
-
 
 // Global state
 static Mutex kv_mutex;
@@ -148,6 +148,9 @@ kv_result_t kv_init(void) {
   if (storage_get_capacity() == 0) {
 #ifdef __AVR__
     storage_set_driver(storage_get_avr_eeprom_driver());
+#elif defined(ARDUINO_ARCH_RENESAS) || defined(ARDUINO_UNOR4_MINIMA) ||        \
+    defined(ARDUINO_UNOR4_WIFI)
+    storage_set_driver(storage_get_arduino_eeprom_driver());
 #endif
     storage_init();
   }

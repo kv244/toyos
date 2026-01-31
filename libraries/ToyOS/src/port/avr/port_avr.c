@@ -8,6 +8,9 @@
  * Date: January 2026
  */
 
+/* Guard entire file based on architecture */
+#if defined(__AVR__)
+
 #include "port_avr.h"
 #include "../../port.h"
 #include <string.h>
@@ -316,3 +319,5 @@ uint32_t port_get_sram_size(void) { return PORT_AVR_SRAM_SIZE; }
  * Get EEPROM size in bytes.
  */
 uint32_t port_get_eeprom_size(void) { return PORT_AVR_EEPROM_SIZE; }
+
+#endif /* __AVR__ */

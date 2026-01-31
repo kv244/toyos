@@ -19,7 +19,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -67,6 +66,19 @@ extern "C" {
 #endif /* PORT_PLATFORM */
 
 /* ========================================================================
+ * PLATFORM-SPECIFIC INCLUDES
+ * ======================================================================== */
+
+/* Include platform-specific implementation header */
+#if PORT_PLATFORM == PORT_PLATFORM_AVR
+#include "port/avr/port_avr.h"
+#elif PORT_PLATFORM == PORT_PLATFORM_ARM_CORTEX_M
+#include "port/arm/port_arm.h"
+#else
+#error "No port implementation for selected platform"
+#endif
+
+/* ========================================================================
  * PLATFORM-SPECIFIC CONFIGURATION
  * ======================================================================== */
 
@@ -99,23 +111,15 @@ extern "C" {
  * Platform-specific implementation saves interrupt state and disables
  * interrupts.
  */
-void port_enter_critical(void);
-
-/**
- * End critical section (restore interrupts).
- * Platform-specific implementation restores previous interrupt state.
- */
-void port_exit_critical(void);
+/* Delegated to platform header */
+// void port_enter_critical(void);
+// void port_exit_critical(void);
 
 /**
  * Globally enable interrupts.
  */
-void port_enable_interrupts(void);
-
-/**
- * Globally disable interrupts.
- */
-void port_disable_interrupts(void);
+// void port_enable_interrupts(void);
+// void port_disable_interrupts(void);
 
 /* ========================================================================
  * CONTEXT SWITCHING
@@ -134,8 +138,8 @@ void port_disable_interrupts(void);
  * @param task_func Pointer to task entry function
  * @return Stack pointer ready for context restore (adjusted downward)
  */
-uint8_t *port_init_stack(uint8_t *stack_top, uint16_t stack_size,
-                         void (*task_func)(void));
+// uint8_t *port_init_stack(uint8_t *stack_top, uint16_t stack_size,
+//                          void (*task_func)(void));
 
 /**
  * Perform context switch.
@@ -154,7 +158,7 @@ uint8_t *port_init_stack(uint8_t *stack_top, uint16_t stack_size,
  *
  * @note This function never returns to the same task!
  */
-void port_context_switch(void);
+// void port_context_switch(void);
 
 /**
  * Start the first task (called from os_start).
@@ -164,7 +168,8 @@ void port_context_switch(void);
  *
  * @param task_stack_ptr Stack pointer of first task
  */
-void port_start_first_task(uint8_t *task_stack_ptr) __attribute__((noreturn));
+// void port_start_first_task(uint8_t *task_stack_ptr)
+// __attribute__((noreturn));
 
 /* ========================================================================
  * TIMER / SYSTEM TICK
@@ -180,7 +185,7 @@ void port_start_first_task(uint8_t *task_stack_ptr) __attribute__((noreturn));
  * - AVR: Timer1 in CTC mode
  * - ARM: SysTick timer
  */
-void port_timer_init(void);
+// void port_timer_init(void);
 
 /**
  * Get current system tick count.
@@ -190,7 +195,7 @@ void port_timer_init(void);
  *
  * @return Current tick count
  */
-uint32_t port_get_tick(void);
+// uint32_t port_get_tick(void);
 
 /* ========================================================================
  * ATOMIC OPERATIONS
@@ -201,22 +206,10 @@ uint32_t port_get_tick(void);
  * @param ptr Pointer to variable
  * @return New value after increment
  */
-uint8_t port_atomic_inc_u8(volatile uint8_t *ptr);
-
-/**
- * Atomic decrement of uint8_t variable.
- * @param ptr Pointer to variable
- * @return New value after decrement
- */
-uint8_t port_atomic_dec_u8(volatile uint8_t *ptr);
-
-/**
- * Atomic compare-and-swap.
- * If *ptr == expected, sets *ptr = desired and returns true.
- * Otherwise returns false.
- */
-bool port_atomic_cas_u8(volatile uint8_t *ptr, uint8_t expected,
-                        uint8_t desired);
+// uint8_t port_atomic_inc_u8(volatile uint8_t *ptr);
+// uint8_t port_atomic_dec_u8(volatile uint8_t *ptr);
+// bool port_atomic_cas_u8(volatile uint8_t *ptr, uint8_t expected, uint8_t
+// desired);
 
 /* ========================================================================
  * STACK UTILITIES
@@ -228,7 +221,7 @@ bool port_atomic_cas_u8(volatile uint8_t *ptr, uint8_t expected,
  *
  * @return Current stack pointer
  */
-void *port_get_stack_pointer(void);
+// void *port_get_stack_pointer(void);
 
 /**
  * Fast stack zeroing (optional optimization).
@@ -240,7 +233,7 @@ void *port_get_stack_pointer(void);
  * @param count Number of bytes to zero
  * @return Updated stack pointer after zeroing
  */
-uint8_t *port_fast_zero_stack(uint8_t *sp, uint8_t count);
+// uint8_t *port_fast_zero_stack(uint8_t *sp, uint8_t count);
 
 /* ========================================================================
  * LOW POWER / IDLE
@@ -253,7 +246,7 @@ uint8_t *port_fast_zero_stack(uint8_t *sp, uint8_t count);
  * Should enable interrupts and enter low-power mode.
  * CPU will wake on next interrupt (timer tick).
  */
-void port_enter_idle(void);
+// void port_enter_idle(void);
 
 /* ========================================================================
  * WATCHDOG TIMER
@@ -264,18 +257,9 @@ void port_enter_idle(void);
  *
  * @param timeout_ms Timeout period in milliseconds
  */
-void port_wdt_init(uint16_t timeout_ms);
-
-/**
- * Feed/reset the watchdog timer.
- * Must be called periodically to prevent system reset.
- */
-void port_wdt_feed(void);
-
-/**
- * Disable watchdog timer.
- */
-void port_wdt_disable(void);
+// void port_wdt_init(uint16_t timeout_ms);
+// void port_wdt_feed(void);
+// void port_wdt_disable(void);
 
 /* ========================================================================
  * PLATFORM INFORMATION
@@ -285,26 +269,20 @@ void port_wdt_disable(void);
  * Get platform name string.
  * @return String describing the platform (e.g., "AVR ATmega328P")
  */
-const char *port_get_platform_name(void);
+// const char *port_get_platform_name(void);
 
 /**
  * Get CPU frequency in Hz.
  * @return CPU clock frequency
  */
-uint32_t port_get_cpu_freq(void);
+// uint32_t port_get_cpu_freq(void);
 
 /* ========================================================================
  * PLATFORM-SPECIFIC INCLUDES
  * ======================================================================== */
 
 /* Include platform-specific implementation header */
-#if PORT_PLATFORM == PORT_PLATFORM_AVR
-#include "port/avr/port_avr.h"
-#elif PORT_PLATFORM == PORT_PLATFORM_ARM_CORTEX_M
-#include "port/arm/port_arm.h"
-#else
-#error "No port implementation for selected platform"
-#endif
+/* Platform includes moved to top */
 
 #ifdef __cplusplus
 }

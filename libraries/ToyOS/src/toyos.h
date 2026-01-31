@@ -269,7 +269,7 @@ typedef struct {
  * @note This function never returns to the same task!
  *       It always returns to the task selected by scheduler.
  */
-extern "C" void os_context_switch(void);
+void os_context_switch(void);
 
 /* ========================================================================
  * TASK QUEUE DATA STRUCTURES
