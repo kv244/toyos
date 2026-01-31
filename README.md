@@ -228,12 +228,55 @@ The `kv_db_demo` application demonstrates:
 
 ## 🔧 Configuration
 
-### ToyOS (toyos.h)
-| Constant | Default | Description |
-|----------|---------|-------------|
-| `MAX_TASKS` | 6 | Maximum concurrent tasks |
-| `DEFAULT_STACK_SIZE` | 96 | Default stack size in bytes |
-| `MIN_STACK_SIZE` | 48 | Minimum safety limit |
+ToyOS v2.4+ features a comprehensive configuration system allowing customization without modifying library code.
+
+### Quick Configuration
+
+For most projects, default values work great. To customize:
+
+```cpp
+// Define custom parameters BEFORE including toyos.h
+#define TOYOS_MAX_TASKS 8
+#define TOYOS_DEFAULT_STACK_SIZE 128
+#include <toyos.h>
+```
+
+### Full Configuration
+
+Create `toyos_user_config.h` in your sketch folder:
+
+```cpp
+#ifndef TOYOS_USER_CONFIG_H
+#define TOYOS_USER_CONFIG_H
+
+#define TOYOS_MAX_TASKS 8
+#define TOYOS_DEFAULT_STACK_SIZE 128
+#define TOYOS_MEMORY_POOL_SIZE 1024
+#define TOYOS_ENABLE_DEBUG 1
+
+#endif
+```
+
+Then enable it in your sketch:
+
+```cpp
+#define TOYOS_USER_CONFIG
+#include <toyos.h>
+```
+
+### Key Parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `TOYOS_MAX_TASKS` | 6 | Maximum concurrent tasks (1-32) |
+| `TOYOS_DEFAULT_STACK_SIZE` | 96 | Default stack size in bytes |
+| `TOYOS_MIN_STACK_SIZE` | 48 | Minimum safety limit |
+| `TOYOS_DEFAULT_PRIORITY` | 5 | Default task priority (0-255) |
+| `TOYOS_TICK_RATE_HZ` | 1000 | System tick frequency (1ms tick) |
+| `TOYOS_ENABLE_WATCHDOG` | 1 | Enable watchdog timer |
+| `TOYOS_DEBUG` | 0 | Enable debug assertions |
+
+**See [`CONFIGURATION.md`](libraries/ToyOS/CONFIGURATION.md) for complete documentation.**
 
 ### KV Database (kv_db.h)
 | Constant | Default | Description |
@@ -241,6 +284,7 @@ The `kv_db_demo` application demonstrates:
 | `KV_MAX_KEY_LEN` | 24 | Maximum key length |
 | `KV_MAX_VAL_LEN` | 1024 | Maximum value length |
 | `KV_EEPROM_SIZE` | 1024 | Total EEPROM size (Arduino UNO) |
+| `KV_MAX_KEYS` | 18 | Maximum number of unique keys |
 
 ---
 

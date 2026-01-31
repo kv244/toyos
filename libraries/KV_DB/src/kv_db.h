@@ -87,9 +87,17 @@ kv_result_t kv_read(const char *key, char *buffer, uint16_t max_len,
 /**
  * Delete a key from the database.
  * Removes the entry from the sorted index.
- * The EEPROM space is not reclaimed until kv_clear() is called.
+ * The EEPROM space is not reclaimed until kv_compact() or kv_clear() is called.
  */
 kv_result_t kv_delete(const char *key);
+
+/**
+ * Compact the database to reclaim EEPROM space.
+ * Copies all live entries to fresh EEPROM blocks starting from
+ * KV_RECORDS_OFFSET. This reclaims space from deleted or updated entries.
+ * Returns the number of bytes reclaimed, or negative error code.
+ */
+int16_t kv_compact(void);
 
 /**
  * Utility to clear the entire database.

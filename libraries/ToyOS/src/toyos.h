@@ -1,8 +1,8 @@
 /**
- * ToyOS - Tiny Operating System for AVR/Arduino
+ * ToyOS - Tiny Operating System for Multi-Platform
  *
- * A preemptive, priority-based Real-Time Operating System (RTOS) for
- * Arduino UNO and compatible ATmega328P microcontrollers.
+ * A preemptive, priority-based Real-Time Operating System (RTOS) with
+ * portability layer for multiple architectures.
  *
  * Features:
  * - Priority-based preemptive multitasking
@@ -12,14 +12,21 @@
  * - Message queues for inter-task communication
  * - Stack overflow detection with canaries
  * - Optimized context switching in assembly
+ * - Multiplatform support (AVR, ARM Cortex-M planned)
  *
  * Author: [Your Name]
- * Version: 2.4
+ * Version: 2.5.0
  * Date: January 2026
  */
 
 #ifndef TOYOS_H
 #define TOYOS_H
+
+/* ToyOS Version */
+#define TOYOS_VERSION_MAJOR 2
+#define TOYOS_VERSION_MINOR 5
+#define TOYOS_VERSION_PATCH 0
+#define TOYOS_VERSION_STRING "2.5.0"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -29,34 +36,44 @@ extern "C" {
 #endif
 
 /* ========================================================================
- * CONFIGURATION CONSTANTS
+ * USER CONFIGURATION
+ * ======================================================================== */
+
+/**
+ * Include user configuration if TOYOS_USER_CONFIG is defined.
+ * Users can create their own toyos_user_config.h to override defaults.
+ */
+#ifdef TOYOS_USER_CONFIG
+#include "toyos_user_config.h"
+#endif
+
+/**
+ * Include default configuration.
+ * This provides #ifndef guards so user overrides take precedence.
+ */
+#include "toyos_config.h"
+
+/* ========================================================================
+ * CONFIGURATION CONSTANTS (from toyos_config.h)
  * ======================================================================== */
 
 /**
  * Maximum number of tasks that can be created in the system.
- * Each task consumes one TaskNode in the static pool.
- *
- * Memory impact: ~40 bytes per task in static pool
- * Adjust based on available SRAM (2KB on ATmega328P)
+ * Configurable via TOYOS_MAX_TASKS in toyos_config.h
  */
-#define MAX_TASKS 6
+#define MAX_TASKS TOYOS_MAX_TASKS
 
 /**
  * Default stack size for tasks (in bytes).
- * Minimum recommended: 64 bytes
- * Typical: 96-128 bytes
- * Stack grows downward on AVR.
+ * Configurable via TOYOS_DEFAULT_STACK_SIZE in toyos_config.h
  */
-#define DEFAULT_STACK_SIZE 96
+#define DEFAULT_STACK_SIZE TOYOS_DEFAULT_STACK_SIZE
 
 /**
  * Minimum stack size allowed (safety check).
- * Must be at least large enough for:
- * - Stack canary (4 bytes)
- * - Initial context (35 bytes)
- * - Some working space
+ * Configurable via TOYOS_MIN_STACK_SIZE in toyos_config.h
  */
-#define MIN_STACK_SIZE 48
+#define MIN_STACK_SIZE TOYOS_MIN_STACK_SIZE
 
 /* ========================================================================
  * STACK OVERFLOW DETECTION
@@ -64,13 +81,9 @@ extern "C" {
 
 /**
  * Stack canary value for overflow detection.
- * Placed at the bottom (lowest address) of each task's stack.
- * If this value is corrupted, stack overflow is detected.
- *
- * Value chosen to be unlikely to occur naturally:
- * 0xDEADBEEF = 3735928559 decimal
+ * Configurable via TOYOS_STACK_CANARY in toyos_config.h
  */
-#define STACK_CANARY 0xDEADBEEF
+#define STACK_CANARY TOYOS_STACK_CANARY
 
 /* ========================================================================
  * HARDWARE-SPECIFIC CONSTANTS (ATmega328P @ 16MHz)
@@ -83,39 +96,34 @@ extern "C" {
 #define SREG_I_BIT 0x80
 
 /**
- * Timer1 prescaler configuration for 64x division.
- * CS12:CS11:CS10 = 0:1:1 = divide by 64
- * See ATmega328P datasheet section 15.11.2
+ * Timer1 prescaler configuration.
+ * Calculated from TOYOS_TIMER_PRESCALER in toyos_config.h
  */
-#define TIMER1_PRESCALER_64 ((1 << CS11) | (1 << CS10))
+#define TIMER1_PRESCALER_64 TOYOS_TIMER_PRESCALER_BITS
 
 /**
- * Timer1 compare value for 1ms tick at 16MHz with prescaler 64.
- * Calculation: (16,000,000 Hz / 64 / 1000 Hz) - 1 = 249
- *
- * CTC mode: Timer counts from 0 to OCR1A, then resets
- * Frequency = F_CPU / (prescaler * (OCR1A + 1))
- * 1000 Hz = 16,000,000 / (64 * 250)
+ * Timer1 compare value for system tick.
+ * Calculated from TOYOS_TICK_RATE_HZ and TOYOS_TIMER_PRESCALER
  */
-#define TIMER1_1MS_AT_16MHZ 249
+#define TIMER1_1MS_AT_16MHZ ((uint16_t)TOYOS_TIMER_COMPARE_VALUE)
 
 /**
  * System tick frequency in Hz.
- * Each tick represents 1 millisecond.
+ * Configurable via TOYOS_TICK_RATE_HZ in toyos_config.h
  */
-#define OS_TICK_RATE_HZ 1000
+#define OS_TICK_RATE_HZ TOYOS_TICK_RATE_HZ
 
 /**
  * Convert milliseconds to ticks.
  * Usage: os_delay(MS_TO_TICKS(500)); // 500ms delay
  */
-#define MS_TO_TICKS(ms) ((uint16_t)(ms))
+#define MS_TO_TICKS(ms) TOYOS_MS_TO_TICKS(ms)
 
 /**
  * Convert seconds to ticks.
  * Usage: os_delay(SEC_TO_TICKS(2)); // 2 second delay
  */
-#define SEC_TO_TICKS(sec) ((uint16_t)((sec) * OS_TICK_RATE_HZ))
+#define SEC_TO_TICKS(sec) TOYOS_SEC_TO_TICKS(sec)
 
 /* ========================================================================
  * TASK CONTROL BLOCK STRUCTURE OFFSETS
@@ -671,7 +679,18 @@ void os_create_task(uint8_t id, void (*task_func)(void), uint8_t priority,
  *     os_start(); // Never returns!
  *   }
  */
+/**
+ * Start the OS - This function never returns.
+ * The scheduler will pick the highest priority task and switch context to it.
+ */
 void os_start(void);
+
+/**
+ * Print detailed system information (Version, Platform, Memory).
+ * This function uses Serial port and blocks until output is done.
+ * Best called during setup() before os_start().
+ */
+void os_print_info(void);
 
 /**
  * Task scheduler - selects next task to run.

@@ -1,9 +1,10 @@
+#include "port.h"
 #include "toyos.h"
-#include <avr/interrupt.h>
-#include <avr/io.h>
-#include <avr/sleep.h>
-#include <avr/wdt.h>
 #include <util/atomic.h>
+
+#ifdef ARDUINO
+#include <Arduino.h>
+#endif
 
 /* Static Task Pool - no dynamic allocation overhead */
 static TaskNode task_pool[MAX_TASKS];
@@ -16,56 +17,12 @@ static Kernel kernel = {0};
 extern "C" TaskControlBlock *os_current_task_ptr;
 TaskControlBlock *os_current_task_ptr = NULL;
 
-/* Assembly helper functions */
-extern "C" {
-void fast_zero_stack(uint8_t *sp, uint8_t count);
-}
-
 /* Inline helper: get task node from static pool */
 static inline TaskNode *get_task_node(void) __attribute__((always_inline));
 static inline TaskNode *get_task_node(void) {
   if (task_pool_index >= MAX_TASKS)
     return NULL;
   return &task_pool[task_pool_index++];
-}
-
-/* Task Stack Initialization - FIXED: Proper stack layout for context restore */
-static uint8_t *os_init_stack(uint16_t stack_size, void (*task_func)(void),
-                              uint32_t **canary_ptr_out) {
-  uint8_t *stack = (uint8_t *)os_malloc(stack_size);
-  if (!stack)
-    return NULL;
-
-  /* Place canary at bottom of stack for overflow detection */
-  *(uint32_t *)stack = STACK_CANARY;
-  *canary_ptr_out = (uint32_t *)stack;
-
-  /* Point to the end of stack (AVR stack grows down) */
-  uint8_t *sp = stack + stack_size - 1;
-
-  /* Stack layout (from high to low address):
-   * - PC High byte (return address for 'ret')
-   * - PC Low byte
-   * - R0 (temporary storage for SREG during restore)
-   * - SREG (status register with I bit set)
-   * - R1 (zero register)
-   * - R2-R31 (general purpose registers)
-   */
-
-  uint16_t func_addr = (uint16_t)(uintptr_t)task_func;
-  *sp-- = func_addr & 0xFF; /* PC Low byte - Pushed FIRST (Highest Addr) */
-  *sp-- =
-      (func_addr >> 8) & 0xFF; /* PC High byte - Pushed SECOND (Lower Addr) */
-  *sp-- = 0x00;                /* R0 (actual register value) */
-  *sp-- = SREG_I_BIT;          /* SREG (I bit set) */
-  *sp-- = 0x00;                /* R1 (zero register) */
-
-  /* R2-R31: Zero out */
-  for (int i = 0; i < 30; i++) {
-    *sp-- = 0x00;
-  }
-
-  return sp;
 }
 
 /* Block Header for Free List Allocator */
@@ -272,130 +229,6 @@ static void heap_rebuild(void) {
   }
 }
 
-/* Initialize Timer1 for ~1ms system tick at 16MHz */
-void os_timer_init(void) {
-  cli(); /* Disable interrupts */
-
-  /* Configure Pin 13 (PB5) as output for OS activity heartbeat */
-  DDRB |= (1 << 5);
-  PORTB &= ~(1 << 5);
-
-  /* Timer1 CTC mode, prescaler 64 */
-  TCCR1A = 0;
-  TCCR1B = (1 << WGM12) | TIMER1_PRESCALER_64;
-
-  /* For 1ms tick at 16MHz with prescaler 64: 16000000/64/1000 = 250 - 1 */
-  OCR1A = TIMER1_1MS_AT_16MHZ;
-
-  /* Enable Timer1 compare match A interrupt */
-  TIMSK1 = (1 << OCIE1A);
-}
-
-/* Timer1 Compare Match A ISR - Naked for custom context switch */
-ISR(TIMER1_COMPA_vect, ISR_NAKED) {
-  /* Save Context */
-  __asm__ __volatile__("push r0 \n\t"
-                       "in r0, %0 \n\t"
-                       "push r0 \n\t"
-                       "push r1 \n\t"
-                       "clr r1 \n\t"
-                       "push r2 \n\t"
-                       "push r3 \n\t"
-                       "push r4 \n\t"
-                       "push r5 \n\t"
-                       "push r6 \n\t"
-                       "push r7 \n\t"
-                       "push r8 \n\t"
-                       "push r9 \n\t"
-                       "push r10 \n\t"
-                       "push r11 \n\t"
-                       "push r12 \n\t"
-                       "push r13 \n\t"
-                       "push r14 \n\t"
-                       "push r15 \n\t"
-                       "push r16 \n\t"
-                       "push r17 \n\t"
-                       "push r18 \n\t"
-                       "push r19 \n\t"
-                       "push r20 \n\t"
-                       "push r21 \n\t"
-                       "push r22 \n\t"
-                       "push r23 \n\t"
-                       "push r24 \n\t"
-                       "push r25 \n\t"
-                       "push r26 \n\t"
-                       "push r27 \n\t"
-                       "push r28 \n\t"
-                       "push r29 \n\t"
-                       "push r30 \n\t"
-                       "push r31 \n\t" ::"I"(_SFR_IO_ADDR(SREG)));
-
-  /* Save current SP to TCB */
-  if (os_current_task_ptr) {
-    uint16_t sp_val = SPL | (SPH << 8);
-    os_current_task_ptr->stack_ptr = (uint8_t *)sp_val;
-  }
-
-  /* Call OS tick */
-  os_system_tick();
-
-  /* Call Scheduler to pick next task - ONLY if we started the OS */
-  if (kernel.task_count > 0) {
-    os_scheduler();
-  }
-
-  /* Load new SP from TCB */
-  if (os_current_task_ptr) {
-    uint16_t sp_val = (uint16_t)os_current_task_ptr->stack_ptr;
-    SPL = sp_val & 0xFF;
-    SPH = sp_val >> 8;
-  }
-
-  /* Restore Context */
-  __asm__ __volatile__("pop r31 \n\t"
-                       "pop r30 \n\t"
-                       "pop r29 \n\t"
-                       "pop r28 \n\t"
-                       "pop r27 \n\t"
-                       "pop r26 \n\t"
-                       "pop r25 \n\t"
-                       "pop r24 \n\t"
-                       "pop r23 \n\t"
-                       "pop r22 \n\t"
-                       "pop r21 \n\t"
-                       "pop r20 \n\t"
-                       "pop r19 \n\t"
-                       "pop r18 \n\t"
-                       "pop r17 \n\t"
-                       "pop r16 \n\t"
-                       "pop r15 \n\t"
-                       "pop r14 \n\t"
-                       "pop r13 \n\t"
-                       "pop r12 \n\t"
-                       "pop r11 \n\t"
-                       "pop r10 \n\t"
-                       "pop r9 \n\t"
-                       "pop r8 \n\t"
-                       "pop r7 \n\t"
-                       "pop r6 \n\t"
-                       "pop r5 \n\t"
-                       "pop r4 \n\t"
-                       "pop r3 \n\t"
-                       "pop r2 \n\t"
-                       "pop r1 \n\t"
-                       "pop r0 \n\t"
-                       "out %0, r0 \n\t"
-                       "pop r0 \n\t"
-                       "reti \n\t" ::"I"(_SFR_IO_ADDR(SREG)));
-}
-
-/* Get current tick count - atomic read for uint32_t */
-uint32_t os_get_tick(void) {
-  uint32_t tick;
-  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) { tick = kernel.system_tick; }
-  return tick;
-}
-
 /* Inline: Add task node to queue tail (for round-robin fallback) */
 static inline void queue_add_tail(TaskQueue *queue, TaskNode *node)
     __attribute__((always_inline));
@@ -452,7 +285,19 @@ void os_create_task(uint8_t id, void (*task_func)(void), uint8_t priority,
 
   /* Initialize stack and get canary pointer - FIXED */
   uint32_t *canary_ptr = NULL;
-  uint8_t *sp = os_init_stack(stack_size, task_func, &canary_ptr);
+  uint8_t *stack = (uint8_t *)os_malloc(stack_size);
+  if (!stack) {
+    /* Failed to allocate stack - return node to pool */
+    task_pool_index--;
+    return;
+  }
+
+  /* Place canary at bottom of stack */
+  *(uint32_t *)stack = STACK_CANARY;
+  canary_ptr = (uint32_t *)stack;
+
+  /* Initialize stack using port layer */
+  uint8_t *sp = port_init_stack(stack, stack_size, task_func);
   if (!sp) {
     /* Failed to allocate stack - return node to pool */
     task_pool_index--;
@@ -894,58 +739,65 @@ uint8_t os_get_priority(uint8_t task_id) {
 
 /* Start the OS - never returns */
 void os_start(void) {
-  cli();           /* Disable interrupts to prevent corruption */
-  os_timer_init(); /* Start system tick timer */
+  port_disable_interrupts(); /* Disable interrupts to prevent corruption */
+  port_timer_init();         /* Start system tick timer (from port layer) */
 
   /* Initial context switch - pick the first task and start it */
   os_scheduler();
 
   if (os_current_task_ptr) {
-    uint16_t sp_val = (uint16_t)os_current_task_ptr->stack_ptr;
-    SPL = sp_val & 0xFF;
-    SPH = sp_val >> 8;
-
-    /* Restore context of the first task - FIXED: Matches stack init layout */
-    __asm__ __volatile__("pop r31 \n\t"
-                         "pop r30 \n\t"
-                         "pop r29 \n\t"
-                         "pop r28 \n\t"
-                         "pop r27 \n\t"
-                         "pop r26 \n\t"
-                         "pop r25 \n\t"
-                         "pop r24 \n\t"
-                         "pop r23 \n\t"
-                         "pop r22 \n\t"
-                         "pop r21 \n\t"
-                         "pop r20 \n\t"
-                         "pop r19 \n\t"
-                         "pop r18 \n\t"
-                         "pop r17 \n\t"
-                         "pop r16 \n\t"
-                         "pop r15 \n\t"
-                         "pop r14 \n\t"
-                         "pop r13 \n\t"
-                         "pop r12 \n\t"
-                         "pop r11 \n\t"
-                         "pop r10 \n\t"
-                         "pop r9 \n\t"
-                         "pop r8 \n\t"
-                         "pop r7 \n\t"
-                         "pop r6 \n\t"
-                         "pop r5 \n\t"
-                         "pop r4 \n\t"
-                         "pop r3 \n\t"
-                         "pop r2 \n\t"
-                         "pop r1 \n\t"
-                         "pop r0 \n\t"
-                         "out %0, r0 \n\t"
-                         "pop r0 \n\t"
-                         "ret \n\t" ::"I"(_SFR_IO_ADDR(SREG)));
+    /* Start the first task using port layer */
+    port_start_first_task(os_current_task_ptr->stack_ptr);
   }
 
-  /* This part should never be reached. If it is, it means no tasks were
-   * created. We'll hang here. A watchdog timer could catch this. */
-  while (1) {
-    // System halted: No tasks to run.
-  }
+  /* Should never reach here */
+  while (1)
+    ;
+}
+
+/**
+ * Print detailed system information to Serial port.
+ * Blocks until output is complete.
+ */
+void os_print_info(void) {
+  /* Note: We assume Serial is initialized by user validation calling this */
+  /* If running on Arduino, Serial.print is available via C++ */
+
+#ifdef ARDUINO
+  /* We use simple prints to avoid large printf overhead */
+
+  /* Ensure we have a serial connection if not already started */
+  /* Note: This might re-init if user did Serial.begin(115200) */
+  /* Good practice: User calls Serial.begin() before os_print_info() */
+
+  Serial.println(F("========================================"));
+  Serial.print(F("ToyOS Version: "));
+  Serial.println(TOYOS_VERSION_STRING);
+  Serial.println(F("========================================"));
+
+  Serial.print(F("Platform:      "));
+  Serial.println(port_get_platform_name());
+
+  Serial.print(F("MCU:           "));
+  Serial.println(port_get_mcu_name());
+
+  Serial.print(F("CPU Freq:      "));
+  Serial.print(port_get_cpu_freq() / 1000000);
+  Serial.println(F(" MHz"));
+
+  Serial.print(F("Flash Size:    "));
+  Serial.print(port_get_flash_size() / 1024);
+  Serial.println(F(" KB"));
+
+  Serial.print(F("SRAM Size:     "));
+  Serial.print(port_get_sram_size() / 1024);
+  Serial.println(F(" KB"));
+
+  Serial.print(F("EEPROM Size:   "));
+  Serial.print(port_get_eeprom_size());
+  Serial.println(F(" Bytes"));
+
+  Serial.println(F("========================================"));
+  Serial.flush();
+#endif
 }

@@ -327,6 +327,91 @@ kv_result_t kv_delete(const char *key) {
 }
 
 /**
+ * Compact the database to reclaim EEPROM space.
+ * Copies all live entries to fresh EEPROM space.
+ */
+int16_t kv_compact(void) {
+  os_mutex_lock(&kv_mutex);
+
+  uint16_t old_next_free = index_cache.next_free_addr;
+  uint16_t write_addr = KV_RECORDS_OFFSET;
+
+  // Temporary buffer for copying record data
+  char temp_buffer[KV_MAX_KEY_LEN + 1];
+
+  // Process each entry in the index
+  for (uint8_t i = 0; i < index_cache.count; i++) {
+    uint16_t old_addr = index_cache.entries[i].addr;
+
+    // Read the record header
+    KVRecord header;
+    eeprom_read_block(&header, (void *)old_addr, sizeof(KVRecord));
+
+    // Calculate record size
+    uint16_t record_size = sizeof(KVRecord) + header.key_len + header.val_len;
+
+    // Check if we have space (should always succeed for compaction)
+    if (write_addr + record_size > KV_EEPROM_SIZE) {
+      // This shouldn't happen - the data should always fit
+      os_mutex_unlock(&kv_mutex);
+      return KV_ERR_FULL;
+    }
+
+    // If the record is already at the target location, skip copying
+    if (old_addr == write_addr) {
+      write_addr += record_size;
+      continue;
+    }
+
+    // Copy the entire record (header + key + value) to new location
+    // We do this in chunks to avoid using too much SRAM
+
+    // Copy header
+    eeprom_update_block(&header, (void *)write_addr, sizeof(KVRecord));
+
+    // Copy key
+    uint16_t src_offset = old_addr + sizeof(KVRecord);
+    uint16_t dst_offset = write_addr + sizeof(KVRecord);
+    eeprom_read_block(temp_buffer, (void *)src_offset, header.key_len);
+    eeprom_update_block(temp_buffer, (void *)dst_offset, header.key_len);
+
+    // Copy value in chunks to avoid large SRAM usage
+    uint16_t val_remaining = header.val_len;
+    src_offset += header.key_len;
+    dst_offset += header.key_len;
+
+    while (val_remaining > 0) {
+      uint16_t chunk_size =
+          (val_remaining > KV_MAX_KEY_LEN) ? KV_MAX_KEY_LEN : val_remaining;
+      eeprom_read_block(temp_buffer, (void *)src_offset, chunk_size);
+      eeprom_update_block(temp_buffer, (void *)dst_offset, chunk_size);
+
+      src_offset += chunk_size;
+      dst_offset += chunk_size;
+      val_remaining -= chunk_size;
+    }
+
+    // Update index entry with new address
+    index_cache.entries[i].addr = write_addr;
+
+    // Move write pointer forward
+    write_addr += record_size;
+  }
+
+  // Update next free address
+  index_cache.next_free_addr = write_addr;
+
+  // Persist updated index to EEPROM
+  write_index_to_eeprom();
+
+  // Calculate bytes reclaimed
+  int16_t reclaimed = old_next_free - write_addr;
+
+  os_mutex_unlock(&kv_mutex);
+  return reclaimed;
+}
+
+/**
  * Clear the entire database.
  */
 kv_result_t kv_clear(void) {
