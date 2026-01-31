@@ -151,9 +151,11 @@ __attribute__((naked)) void PendSV_Handler(void) {
       /* Select Next Task */
       "bl os_scheduler \n"
 
+#if TOYOS_USE_MPU
       "ldr r0, =os_current_task_ptr \n"
       "ldr r0, [r0] \n"
       "bl port_mpu_reconfigure \n"
+#endif
 
       "pop {r14} \n"
 
