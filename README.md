@@ -1,6 +1,6 @@
 # ToyOS - Tiny Operating System for Arduino
 
-**Version 2.3 - DYNAMIC MEMORY & STABILITY**
+**Version 2.4 - ADVANCED RTOS FEATURES**
 **Status:** ✅ Production Ready for Hobbyist/Edu
 **Last Updated:** January 2026
 
@@ -11,8 +11,10 @@ ToyOS is a lightweight, preemptive Real-Time Operating System (RTOS) designed sp
 ## 🌟 Features
 
 ### Core Features
-- ✅ **Preemptive Multitasking**: Hardware timer-driven context switching (1ms tick).
-- ✅ **Priority Scheduling**: Binary heap scheduler ensuring O(log n) task selection.
+- ✅ **Priority-Based Preemptive Scheduling**: Uses binary heap for O(log N) task selection.
+- ✅ **Priority Inheritance Protocol**: Prevents priority inversion for Mutexes.
+- ✅ **Watchdog Timer Integration**: Hardware recovery from system hangs.
+- ✅ **Stack High-Water Mark tracking**: Accurate stack usage monitoring.
 - ✅ **Stack Overflow Detection**: Canary-based protection.
 - ✅ **Delta Queue Delays**: O(1) tick processing for sleeping tasks.
 - ✅ **Optimized Context Switching**: Hand-coded assembly for minimal overhead (~35 cycles).
@@ -135,6 +137,12 @@ Cons1 Got (Fast): 1
 ---
 
 ## 📝 Version History
+
+### v2.4 (January 2026) - ADVANCED FEATURES
+- ✅ **Priority Inheritance Protocol**: Added support for Mutex priority bumping.
+- ✅ **Starvation Safeguard**: Integrated hardware **Watchdog Timer**.
+- ✅ **Performance Tuning**: Added **Stack High-Water Mark tracking** via `os_get_stack_usage()`.
+- ✅ **Scalability**: Increased `MAX_TASKS` limit and optimized task pool.
 
 ### v2.3 (January 2026) - DYNAMIC MEMORY
 - ✅ **Dynamic Memory**: Replaced Bump Allocator with **Free List Allocator**.

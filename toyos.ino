@@ -1,123 +1,86 @@
 #include "toyos.h"
 #include <Arduino.h>
+#include <avr/wdt.h>
 
-static uint8_t mem_pool[1024] __attribute__((aligned(2)));
+static uint8_t mem_pool[832] __attribute__((aligned(2)));
 
 Mutex serial_mutex;
-MessageQueue *sensor_mq;
+Mutex pi_mutex;
 
-#define LED_PIN 13
-#define LED_DDR DDRB
-#define LED_PORT PORTB
-#define LED_BIT PB5
-#define LED_ON() (LED_PORT |= (1 << LED_BIT))
-#define LED_OFF() (LED_PORT &= ~(1 << LED_BIT))
+/* Priority Inheritance Test Tasks */
+void task_low(void) {
+  os_mutex_lock(&pi_mutex);
 
-/* TEST: Global Semaphore for LED synchronization */
-Semaphore led_sem;
+  os_mutex_lock(&serial_mutex);
+  Serial.print(F("[PI] Low locked. Base Prio: 1, Current Prio: "));
+  Serial.println(os_get_priority(20));
+  os_mutex_unlock(&serial_mutex);
 
-void task_producer(void) {
-  int counter = 0;
+  /* Long busy wait. During this:
+   * 1. Med (2) will preempt and run.
+   * 2. High (3) will preempt Med and try to lock.
+   * 3. High will boost Low to 3.
+   * 4. Low (3) will preempt Med (2) and finish its work.
+   */
+  for (volatile uint32_t i = 0; i < 1500000; i++)
+    ;
 
-  while (1) {
-    /* TEST: Malloc/Free Stress Test - Allocate 32 bytes */
-    char *dynamic_buf = (char *)os_malloc(32);
-    if (dynamic_buf) {
-      strcpy(dynamic_buf, "Malloc: OK");
-      // Prevent compiler optimization by reading it back
-      if (dynamic_buf[0] != 'M')
-        Serial.println(F("Error"));
+  os_mutex_lock(&serial_mutex);
+  Serial.print(F("[PI] Low finished loop. Current Prio: "));
+  Serial.println(os_get_priority(20));
+  Serial.print(F("[PI] Stack Usage (Low): "));
+  Serial.println(os_get_stack_usage(20));
+  os_mutex_unlock(&serial_mutex);
 
-      /* Valid allocation - now free it */
-      os_free(dynamic_buf);
-    } else {
-      /* Leak detection! */
-      Serial.println(F("Malloc: FAILED (Leak?)"));
-    }
+  os_mutex_unlock(&pi_mutex);
 
-    /* Send counter value as a pointer (cast) - USING FAST PATH */
-    os_mq_send_fast(sensor_mq, (void *)(uintptr_t)counter);
+  os_mutex_lock(&serial_mutex);
+  Serial.print(F("[PI] Low released mutex. Restored Prio: "));
+  Serial.println(os_get_priority(20));
+  os_mutex_unlock(&serial_mutex);
 
-    /* TEST: Mutex for Serial & GetTick */
-    os_mutex_lock(&serial_mutex);
-    Serial.print(F("Prod Sent: "));
-    Serial.print(counter);
-    Serial.print(F(" @ Tick: "));
-    Serial.println(os_get_tick());
-
-    if (!dynamic_buf)
-      Serial.println(F("STATUS: LEAKING MEMORY!"));
-
-    os_mutex_unlock(&serial_mutex);
-
-    counter++;
+  while (1)
     os_delay(1000);
+}
+
+void task_med(void) {
+  os_delay(100); // Start after Low locks
+  os_mutex_lock(&serial_mutex);
+  Serial.println(F("[PI] Med woke up and preempted Low."));
+  os_mutex_unlock(&serial_mutex);
+
+  while (1) {
+    /* Busy loop to show priority levels.
+     * If PI works, Low will preempt this even though Low's base is 1 < 2.
+     * If PI FAILS, this will run forever and High will never get the lock.
+     */
+    os_wdt_feed(); // Specifically feed here so it doesn't reset during Med's
+                   // turn
   }
 }
 
-void task_consumer_1(void) {
-  while (1) {
-    void *msg = os_mq_receive_fast(sensor_mq);
-    int val = (int)(uintptr_t)msg;
+void task_high(void) {
+  os_delay(200); // Start after Med
+  os_mutex_lock(&serial_mutex);
+  Serial.println(F("[PI] High woke up and trying to lock mutex..."));
+  os_mutex_unlock(&serial_mutex);
 
-    os_mutex_lock(&serial_mutex);
-    Serial.print(F("Cons1 Got (Fast): "));
-    Serial.println(val);
-    os_mutex_unlock(&serial_mutex);
+  os_mutex_lock(&pi_mutex);
 
-    /* TEST: Cooperative Yield */
-    os_task_yield();
+  os_mutex_lock(&serial_mutex);
+  Serial.println(F("[PI] High GOT lock! PI Success."));
+  Serial.print(F("[PI] Stack Usage (High): "));
+  Serial.println(os_get_stack_usage(22));
+  os_mutex_unlock(&serial_mutex);
 
-    os_delay(500);
-  }
-}
-
-void task_consumer_2(void) {
-  while (1) {
-    void *msg = os_mq_receive_fast(sensor_mq);
-    int val = (int)(uintptr_t)msg;
-
-    os_mutex_lock(&serial_mutex);
-    Serial.print(F("Cons2 Got (Fast): "));
-    Serial.println(val);
-    os_mutex_unlock(&serial_mutex);
-
-    os_delay(500);
-  }
-}
-
-void task_led_a(void) {
-  while (1) {
-    /* Blink Pattern A */
-    LED_ON();
-    os_delay(200);
-    LED_OFF();
-
-    /* TEST: Signal Task B to run now */
-    os_sem_post(&led_sem);
-
-    os_delay(800);
-  }
-}
-
-void task_led_b(void) {
-  while (1) {
-    /* TEST: Wait for Signal from Task A */
-    os_sem_wait(&led_sem);
-
-    /* Fast double-blink to distinguish */
-    LED_ON();
-    os_delay(50);
-    LED_OFF();
-    os_delay(50);
-    LED_ON();
-    os_delay(50);
-    LED_OFF();
-  }
+  os_mutex_unlock(&pi_mutex);
+  while (1)
+    os_delay(1000);
 }
 
 void task_idle(void) {
   while (1) {
+    os_wdt_feed();
     os_check_stack_overflow();
     os_enter_idle();
   }
@@ -128,51 +91,24 @@ void setup() {
   while (!Serial)
     ;
 
-  Serial.println(F("ToyOS V2.2 - Comprehensive Test Suite"));
-  Serial.println(F("====================================="));
+  Serial.println(F("ToyOS V2.4 - Priority Inheritance Test"));
+  Serial.println(F("======================================="));
   Serial.flush();
 
-  /* Configure LED pin */
-  LED_DDR |= (1 << LED_BIT);
-  LED_OFF();
-
-  /* Initialize OS and primitives */
   os_init(mem_pool, sizeof(mem_pool));
-  Serial.println(F("OS Init: OK"));
-
   os_mutex_init(&serial_mutex);
-  os_sem_init(&led_sem, 0); /* Init semaphore with 0 count (locked) */
+  os_mutex_init(&pi_mutex);
 
-  sensor_mq = os_mq_create(5);
-  if (sensor_mq == NULL) {
-    Serial.println(F("MQ Create: FAILED"));
-    while (1)
-      ;
-  }
-  Serial.println(F("MQ Create: OK"));
+  /* Init Watchdog - 8s for safe PI test */
+  os_wdt_init(WDTO_8S);
 
-  /* Create tasks */
-  os_create_task(10, task_producer, 10, 256);
-  Serial.println(F("Task Prod: OK"));
+  /* Create tasks: L(1), M(2), H(3) */
+  os_create_task(20, task_low, 1, 144);
+  os_create_task(21, task_med, 2, 144);
+  os_create_task(22, task_high, 3, 144);
+  os_create_task(0, task_idle, 0, 80);
 
-  os_create_task(2, task_consumer_1, 5, 128);
-  Serial.println(F("Task Cons1: OK"));
-
-  os_create_task(3, task_consumer_2, 5, 128);
-  Serial.println(F("Task Cons2: OK"));
-
-  os_create_task(1, task_led_a, 1, 80);
-  os_create_task(1, task_led_b, 1, 80);
-  os_create_task(0, task_idle, 0, 64);
-  Serial.println(F("All Tasks: OK"));
-
-  Serial.println(F("Starting Pre-emptive Scheduler..."));
-  Serial.flush();
   os_start();
-
-  while (1) {
-    // Should never reach here
-  }
 }
 
 void loop() {}

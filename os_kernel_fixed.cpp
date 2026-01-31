@@ -2,6 +2,7 @@
 #include <avr/interrupt.h>
 #include <avr/io.h>
 #include <avr/sleep.h>
+#include <avr/wdt.h>
 #include <util/atomic.h>
 
 /* Static Task Pool - no dynamic allocation overhead */
@@ -236,6 +237,41 @@ static TaskNode *heap_pop(void) {
   return top;
 }
 
+static void heapify(uint8_t i) {
+  uint8_t size = kernel.ready_heap.size;
+  while (1) {
+    uint8_t largest = i;
+    uint8_t left = 2 * i + 1;
+    uint8_t right = 2 * i + 2;
+
+    if (left < size && kernel.ready_heap.nodes[left]->task.priority >
+                           kernel.ready_heap.nodes[largest]->task.priority) {
+      largest = left;
+    }
+    if (right < size && kernel.ready_heap.nodes[right]->task.priority >
+                            kernel.ready_heap.nodes[largest]->task.priority) {
+      largest = right;
+    }
+
+    if (largest != i) {
+      TaskNode *temp = kernel.ready_heap.nodes[i];
+      kernel.ready_heap.nodes[i] = kernel.ready_heap.nodes[largest];
+      kernel.ready_heap.nodes[largest] = temp;
+      i = largest;
+    } else {
+      break;
+    }
+  }
+}
+
+static void heap_rebuild(void) {
+  if (kernel.ready_heap.size <= 1)
+    return;
+  for (int8_t i = (kernel.ready_heap.size / 2) - 1; i >= 0; i--) {
+    heapify(i);
+  }
+}
+
 /* Initialize Timer1 for ~1ms system tick at 16MHz */
 void os_timer_init(void) {
   cli(); /* Disable interrupts */
@@ -423,10 +459,20 @@ void os_create_task(uint8_t id, void (*task_func)(void), uint8_t priority,
   new_node->task.state = TASK_READY;
   new_node->task.task_func = task_func;
   new_node->task.priority = priority;
+  new_node->task.base_priority = priority;
   new_node->task.stack_size = stack_size;
   new_node->task.delta_ticks = 0;
   new_node->task.stack_ptr = sp;
   new_node->task.canary_ptr = canary_ptr;
+
+  /* Fill stack with pattern for high-water mark tracking */
+  /* Skip the initial context (approx 35 bytes) and canary (4 bytes) */
+  uint8_t *stack_base = (uint8_t *)canary_ptr + 4;
+  uint16_t fill_size = stack_size - 35 - 4;
+  for (uint16_t i = 0; i < fill_size; i++) {
+    stack_base[i] = 0xA5;
+  }
+
   new_node->next = NULL;
 
   /* Add to ready heap with atomic protection */
@@ -615,6 +661,15 @@ void os_mutex_lock(Mutex *mutex) {
     mutex->locked = 1;
     mutex->owner = kernel.current_task;
   } else {
+    /* Priority Inheritance: Bump owner's priority if lower than ours */
+    if (mutex->owner->priority < kernel.current_task->priority) {
+      mutex->owner->priority = kernel.current_task->priority;
+      /* If owner is READY in the heap, we must rebuild to promote it */
+      if (mutex->owner->state == TASK_READY) {
+        heap_rebuild();
+      }
+    }
+
     /* Block current task - FIXED: Add context switch */
     TaskNode *node = kernel.current_node;
     if (node) {
@@ -639,11 +694,19 @@ void os_mutex_unlock(Mutex *mutex) {
     TaskNode *node = queue_remove(&mutex->blocked_tasks);
     node->task.state = TASK_READY;
     mutex->owner = &node->task; // Pass ownership to the next waiting task
+
+    /* The new owner's priority might be high due to inheritance,
+     * but we don't need to rebuild here because we're adding it to heap fresh.
+     */
     heap_push(node);
   } else {
     mutex->locked = 0;
     mutex->owner = NULL;
   }
+
+  /* Restore our own base priority now that we've released the mutex */
+  kernel.current_task->priority = kernel.current_task->base_priority;
+
   ATOMIC_END();
 }
 
@@ -779,6 +842,47 @@ void os_enter_idle(void) {
   sei();
   sleep_cpu();
   sleep_disable();
+}
+
+/* Watchdog Timer Support */
+void os_wdt_init(uint8_t timeout) {
+  /* timeout: WDTO_15MS, WDTO_1S, WDTO_2S, etc (from avr/wdt.h) */
+  wdt_enable(timeout);
+}
+
+void os_wdt_feed(void) { wdt_reset(); }
+
+/* Stack High-Water Mark Tracking */
+uint16_t os_get_stack_usage(uint8_t task_id) {
+  TaskNode *node = NULL;
+  for (uint8_t i = 0; i < MAX_TASKS; i++) {
+    if (task_pool[i].task.id == task_id) {
+      node = &task_pool[i];
+      break;
+    }
+  }
+  if (!node)
+    return 0;
+
+  /* Walk up from the bottom (canary) to find the first non-pattern byte */
+  uint8_t *stack_start = (uint8_t *)node->task.canary_ptr + 4;
+  uint16_t unused = 0;
+  uint16_t max_search = node->task.stack_size - 4;
+
+  while (unused < max_search && stack_start[unused] == 0xA5) {
+    unused++;
+  }
+
+  return node->task.stack_size - unused;
+}
+
+uint8_t os_get_priority(uint8_t task_id) {
+  for (uint8_t i = 0; i < MAX_TASKS; i++) {
+    if (task_pool[i].task.id == task_id) {
+      return task_pool[i].task.priority;
+    }
+  }
+  return 0;
 }
 
 /* Start the OS - never returns */

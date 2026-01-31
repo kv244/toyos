@@ -220,6 +220,9 @@ typedef struct {
   /** Task priority (0-255, higher number = higher priority) */
   uint8_t priority;
 
+  /** Original priority (used for restoring after Priority Inheritance) */
+  uint8_t base_priority;
+
   /**
    * Delta ticks for blocked queue.
    * When task is blocked with delay, stores remaining time
@@ -1052,6 +1055,41 @@ void os_check_stack_overflow(void);
  * @note Interrupts must be enabled (sei) for wake-up to work
  */
 void os_enter_idle(void);
+
+/**
+ * Watchdog Timer Initialization.
+ *
+ * @param timeout Timeout duration constant from avr/wdt.h
+ *                (e.g., WDTO_1S, WDTO_2S, WDTO_4S, WDTO_8S)
+ *
+ * @warning Incorrect WDT usage can cause a reset loop if not fed early.
+ */
+void os_wdt_init(uint8_t timeout);
+
+/**
+ * Reset Watchdog Timer ("Feed the dog").
+ *
+ * Must be called periodically before the timeout expires.
+ * Usually called from the OS Idle Task.
+ */
+void os_wdt_feed(void);
+
+/**
+ * Get stack usage high-water mark for a task.
+ *
+ * Scans the stack to find the deepest point reached during execution.
+ *
+ * @param task_id ID of the task to check
+ * @return Number of bytes used (including context and canary)
+ */
+uint16_t os_get_stack_usage(uint8_t task_id);
+
+/**
+ * Get current priority of a task (may be inherited).
+ * @param task_id ID of the task
+ * @return Current priority
+ */
+uint8_t os_get_priority(uint8_t task_id);
 
 #ifdef __cplusplus
 }

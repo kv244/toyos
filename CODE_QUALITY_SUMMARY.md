@@ -22,6 +22,8 @@ ToyOS is a lightweight, preemptive Real-Time Operating System (RTOS) designed fo
   - Critical sections are protected via `ATOMIC_START()` macros.
   - **Stack Stability**: Stack sizes were tuned (Producer: 256 bytes) to prevent overflow-induced heap corruption.
   - **Memory Safety**: `os_mq_create` now includes proper cleanup on buffer allocation failure.
+  - **Hardstack Safety**: Integrated hardware **Watchdog Timer** to catch system hangs and starvation.
+  - **Observability**: **Stack High-Water Mark tracking** allows for precise memory tuning.
 
 ## Code Metrics & Maintainability
 
@@ -34,16 +36,17 @@ ToyOS is a lightweight, preemptive Real-Time Operating System (RTOS) designed fo
 ## Identified Risks & Recommendations
 
 ### 1. Priority Inversion
-- **Issue**: The current Mutex implementation does not support **Priority Inheritance**. A low-priority task holding a lock can indefinitely block a high-priority task.
-- **Recommendation**: Implement a basic priority inheritance protocol.
+- **RESOLVED**: v2.4 implements a **Priority Inheritance Protocol** for Mutexes.
 
-### 2. Allocator Complexity
+### 2. Guard against Starvation
+- **RESOLVED**: v2.4 includes **Watchdog Timer** integration to recover from task/CPU hangs.
+
+### 3. Allocator Complexity
 - **Issue**: The First-Fit Free List search is **O(n)** where n is the number of free blocks. In extreme fragmentation cases, this could cause jitter in high-frequency tasks.
 - **Recommendation**: For time-critical operations, prefer pre-allocating objects or using static pools.
 
-### 3. Error Handling
-- **Issue**: System halts (`while(1)`) on stack overflow (Canary check).
-- **Recommendation**: Implement a Watchdog Reset or an error-logging hook to EEPROM.
+### 4. Stack Optimization
+- **Recommendation**: Use the new **High-Water Mark API** to tune stack sizes for the minimum safe footprint.
 
 ## Conclusion
 ToyOS has matured into a robust, teaching-grade RTOS. The recent bug fixes regarding stack initialization and startup atomicity have resolved the major stability blockers. The system now passes long-duration stress tests (Producer-Consumer demo) with stable serial output.
