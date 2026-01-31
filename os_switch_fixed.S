@@ -1,5 +1,5 @@
 #include <avr/io.h>
-.set TCB_STACK_PTR_OFFSET, 9
+.set TCB_STACK_PTR_OFFSET, 0
 .set SREG_I_BIT, 0x80
 
 .global os_context_switch
@@ -54,8 +54,9 @@ os_context_switch:
     lds r26, os_current_task_ptr
     lds r27, os_current_task_ptr + 1
     
-    ; Add offset to reach stack_ptr field
-    adiw r26, TCB_STACK_PTR_OFFSET
+    ; Add offset to reach stack_ptr field - REMOVED for optimization (Offset=0)
+    ; adiw r26, TCB_STACK_PTR_OFFSET 
+    
     in r0, _SFR_IO_ADDR(SPL)
     st X+, r0
     in r0, _SFR_IO_ADDR(SPH)
@@ -68,11 +69,14 @@ os_context_switch:
     ; Load new SP from TCB
     lds r26, os_current_task_ptr
     lds r27, os_current_task_ptr + 1
+    
+    ; Check for NULL (idle task assurance)
     sbiw r26, 0
     breq .no_task ; Should not happen if idle task exists
 
-    ; Add offset to reach stack_ptr field
-    adiw r26, TCB_STACK_PTR_OFFSET
+    ; Add offset to reach stack_ptr field - REMOVED for optimization (Offset=0)
+    ; adiw r26, TCB_STACK_PTR_OFFSET
+    
     ld r0, X+
     out _SFR_IO_ADDR(SPL), r0
     ld r0, X

@@ -128,15 +128,15 @@ extern "C" {
  * CRITICAL: Must be updated if TCB structure changes!
  * 
  * Current TCB layout:
- *   Offset 0: uint8_t id               (1 byte)
- *   Offset 1: TaskState state          (1 byte)
- *   Offset 2: void (*task_func)(void)  (2 bytes)
- *   Offset 4: uint16_t stack_size      (2 bytes)
- *   Offset 6: uint8_t priority         (1 byte)
- *   Offset 7: uint16_t delta_ticks     (2 bytes)
- *   Offset 9: uint8_t *stack_ptr       (2 bytes) <- TARGET
+ *   Offset 0: uint8_t *stack_ptr       (2 bytes) <- TARGET
+ *   Offset 2: uint8_t id               (1 byte)
+ *   Offset 3: TaskState state          (1 byte)
+ *   Offset 4: void (*task_func)(void)  (2 bytes)
+ *   Offset 6: uint16_t stack_size      (2 bytes)
+ *   Offset 8: uint8_t priority         (1 byte)
+ *   Offset 9: uint16_t delta_ticks     (2 bytes)
  */
-#define TCB_STACK_PTR_OFFSET 9
+#define TCB_STACK_PTR_OFFSET 0
 
 /* ========================================================================
  * TASK STATES
@@ -195,6 +195,16 @@ typedef enum {
  * See TCB_STACK_PTR_OFFSET for assembly dependencies.
  */
 typedef struct {
+  /** 
+   * Current stack pointer for this task.
+   * Saved during context switch, restored when task resumes.
+   * Points to top of saved context on stack.
+   * 
+   * CRITICAL: Offset must match TCB_STACK_PTR_OFFSET!
+   * MOVED TO TOP for Optimization.
+   */
+  uint8_t *stack_ptr;
+
   /** Unique task identifier (user-defined) */
   uint8_t id;
   
@@ -216,15 +226,6 @@ typedef struct {
    * in differential encoding for O(1) tick processing.
    */
   uint16_t delta_ticks;
-  
-  /** 
-   * Current stack pointer for this task.
-   * Saved during context switch, restored when task resumes.
-   * Points to top of saved context on stack.
-   * 
-   * CRITICAL: Offset must match TCB_STACK_PTR_OFFSET!
-   */
-  uint8_t *stack_ptr;
   
   /**
    * Pointer to stack canary (at bottom of stack).
@@ -533,7 +534,7 @@ typedef struct {
   typedef char static_assertion_failed[(condition) ? 1 : -1]
 
 /* Verify critical assumptions at compile time */
-STATIC_ASSERT(TCB_STACK_PTR_OFFSET == 9);
+STATIC_ASSERT(TCB_STACK_PTR_OFFSET == 0);
 STATIC_ASSERT(MAX_TASKS > 0 && MAX_TASKS <= 32);
 STATIC_ASSERT(MIN_STACK_SIZE >= 48);
 STATIC_ASSERT(DEFAULT_STACK_SIZE >= MIN_STACK_SIZE);
