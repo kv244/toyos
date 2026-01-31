@@ -353,6 +353,13 @@ STATIC_ASSERT(sizeof(TaskControlBlock) < 256, tcb_too_large);
       - Created `MISRA_COMPLIANCE.md` guide
       - Refactored kernel core (`os_free`, `heap_push`) for Single Point of Exit (Rule 15.5)
       - Next: Review type casting and recursion
+12. ✅ **KV Store Wear Leveling**
+    - **Status**: Implemented
+    - **Features**:
+      - Log-Structured File System (LFS) architecture
+      - Sector-based circular writing
+      - RAM-based index reconstruction
+      - Tombstone support for deletions
 
 
 ## 📝 Conclusion

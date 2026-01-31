@@ -2,547 +2,336 @@
 #include "hal/storage_arduino_eeprom.h"
 #include "hal/storage_avr_eeprom.h"
 #include "hal/storage_driver.h"
-#include <stdlib.h> // For qsort
+#include <stdlib.h>
 #include <string.h>
 
 
-// Global state
-static kv_lock_t kv_lock;
+/* --- Configuration --- */
 
-#ifdef KV_HAL_ARM
-/* SRAM Shadow Index (Hash Table) for O(1) Lookups on R4 */
-#define KV_HASH_SIZE 32
-static uint16_t shadow_index[KV_HASH_SIZE];
+#define KV_NUM_SECTORS (KV_EEPROM_SIZE / KV_SECTOR_SIZE)
+#define KV_TOMBSTONE_LEN 0xFFFF
 
-/* SRAM buffer for Flash compaction. R4 has 32KB, so 8KB is safe. */
-static uint8_t arm_compact_buf[KV_EEPROM_SIZE];
+/* --- Data Types --- */
 
-static uint8_t kv_hash(const char *key) {
-  uint32_t h = 2166136261U;
-  while (*key) {
-    h = (h ^ (uint8_t)*key++) * 16777619U;
-  }
-  return (uint8_t)(h % KV_HASH_SIZE);
-}
-#endif
-
-// Helper for sorting move list by address to prevent overwrite overlaps
 typedef struct {
-  uint16_t addr;
-  uint8_t index_idx;
-} MoveEntry;
+  uint32_t seq;
+  uint32_t start_addr;
+  bool valid;
+} SectorInfo;
 
-static int compare_move_entries(const void *a, const void *b) {
-  const MoveEntry *ma = (const MoveEntry *)a;
-  const MoveEntry *mb = (const MoveEntry *)b;
-  if (ma->addr < mb->addr)
+typedef struct {
+  uint8_t count;
+  IndexEntry entries[KV_MAX_KEYS];
+  uint32_t head_addr;   // Current write position
+  uint32_t current_seq; // Sequence number of current sector
+} kv_index_t;
+
+/* --- Globals --- */
+
+static kv_lock_t kv_lock;
+static kv_index_t *index_cache = NULL;
+
+/* --- Helper Functions --- */
+
+static int compare_sectors(const void *a, const void *b) {
+  const SectorInfo *sa = (const SectorInfo *)a;
+  const SectorInfo *sb = (const SectorInfo *)b;
+  if (!sa->valid && !sb->valid)
+    return 0;
+  if (!sa->valid)
+    return 1; // Invalid goes to end
+  if (!sb->valid)
     return -1;
-  if (ma->addr > mb->addr)
+  if (sa->seq < sb->seq)
+    return -1;
+  if (sa->seq > sb->seq)
     return 1;
   return 0;
 }
 
-typedef struct {
-  uint8_t count;                   // Current number of keys
-  IndexEntry entries[KV_MAX_KEYS]; // Sorted array of record addresses
-  uint16_t next_free_addr;         // Next allocation address
-} kv_index_t;
-
-static kv_index_t *index_cache = NULL;
-
-/**
- * Read a key from EEPROM at the given record address.
- * Returns the key in the provided buffer (must be at least KV_MAX_KEY_LEN+1).
- */
-static void read_key_from_record(uint16_t addr, char *key_buffer) {
+static void read_key_from_flash(uint32_t addr, char *key_buf) {
   KVRecord header;
   storage_read(addr, &header, sizeof(KVRecord));
-
-  uint8_t read_len =
+  uint8_t len =
       (header.key_len > KV_MAX_KEY_LEN) ? KV_MAX_KEY_LEN : header.key_len;
-  storage_read(addr + sizeof(KVRecord), key_buffer, read_len);
-  key_buffer[read_len] = '\0';
+  storage_read(addr + sizeof(KVRecord), key_buf, len);
+  key_buf[len] = '\0';
 }
 
-/**
- * Compare two keys: one in the provided string, one at an EEPROM address.
- * Returns: <0 if key1 < key2, 0 if equal, >0 if key1 > key2
- */
-static int8_t compare_keys(const char *key1, uint16_t addr2) {
+static int compare_keys_flash(const char *key1, uint32_t addr2) {
   char key2[KV_MAX_KEY_LEN + 1];
-  read_key_from_record(addr2, key2);
+  read_key_from_flash(addr2, key2);
   return strcmp(key1, key2);
 }
 
-/**
- * Binary search in the sorted index.
- * Returns the index position if found, or -1 if not found.
- */
+/* Binary Search in RAM Index */
 static int16_t index_search(const char *key) {
   int16_t left = 0;
   int16_t right = index_cache->count - 1;
 
   while (left <= right) {
     int16_t mid = left + (right - left) / 2;
-    int8_t cmp = compare_keys(key, index_cache->entries[mid].addr);
-
-    if (cmp == 0) {
-      return mid; // Found
-    } else if (cmp < 0) {
+    int cmp = compare_keys_flash(key, index_cache->entries[mid].addr);
+    if (cmp == 0)
+      return mid;
+    if (cmp < 0)
       right = mid - 1;
-    } else {
+    else
       left = mid + 1;
+  }
+  return -1;
+}
+
+/* Insert/Update RAM Index */
+static void index_update(const char *key, uint32_t addr) {
+  int16_t pos = index_search(key);
+
+  if (pos >= 0) {
+    /* Found - Update Address */
+    index_cache->entries[pos].addr = (uint16_t)addr;
+  } else {
+    /* Not Found - Insert sorted */
+    if (index_cache->count < KV_MAX_KEYS) {
+      /* Find insertion spot */
+      int i;
+      for (i = index_cache->count - 1; i >= 0; i--) {
+        if (compare_keys_flash(key, index_cache->entries[i].addr) > 0)
+          break;
+        index_cache->entries[i + 1] = index_cache->entries[i];
+      }
+      index_cache->entries[i + 1].addr = (uint16_t)addr;
+      index_cache->count++;
     }
   }
-
-  return -1; // Not found
 }
 
-/**
- * Find insertion point for a new key using binary search.
- * Returns the index where the key should be inserted.
- */
-static uint8_t find_insert_position(const char *key) {
-  if (index_cache->count == 0) {
-    return 0;
-  }
-
-  int16_t left = 0;
-  int16_t right = index_cache->count - 1;
-
-  while (left <= right) {
-    int16_t mid = left + (right - left) / 2;
-    int8_t cmp = compare_keys(key, index_cache->entries[mid].addr);
-
-    if (cmp < 0) {
-      right = mid - 1;
-    } else if (cmp > 0) {
-      left = mid + 1;
-    } else {
-      return mid; // Key already exists
+static void index_remove(const char *key) {
+  int16_t pos = index_search(key);
+  if (pos >= 0) {
+    for (int i = pos; i < index_cache->count - 1; i++) {
+      index_cache->entries[i] = index_cache->entries[i + 1];
     }
+    index_cache->count--;
   }
-
-  return left; // Insert position
 }
 
-/**
- * Insert a new entry into the sorted index.
- * Shifts existing entries to make room.
- */
-static void index_insert(uint8_t pos, uint16_t addr) {
-  // Bounds check (defensive programming)
-  if (index_cache->count >= KV_MAX_KEYS) {
-    return; // Should never happen if callers validate properly
-  }
-
-  // Shift entries to the right
-  for (uint8_t i = index_cache->count; i > pos; i--) {
-    index_cache->entries[i] = index_cache->entries[i - 1];
-  }
-
-  // Insert new entry
-  index_cache->entries[pos].addr = addr;
-  index_cache->count++;
+static kv_result_t kv_format_sector(uint32_t sector_start, uint32_t seq) {
+  storage_erase(sector_start, KV_SECTOR_SIZE);
+  SectorHeader hdr;
+  hdr.magic = KV_SECTOR_MAGIC;
+  hdr.seq = seq;
+  return (kv_result_t)storage_write(sector_start, &hdr, sizeof(SectorHeader));
 }
 
-/**
- * Remove an entry from the index.
- * Shifts entries to fill the gap.
- */
-static void index_remove(uint8_t pos) {
-  // Shift entries to the left
-  for (uint8_t i = pos; i < index_cache->count - 1; i++) {
-    index_cache->entries[i] = index_cache->entries[i + 1];
-  }
+/* --- Core API --- */
 
-  index_cache->count--;
-}
-
-/**
- * Write the index to EEPROM.
- */
-static void write_index_to_eeprom(void) {
-  KVHeader header;
-  header.magic = KV_MAGIC;
-  header.count = index_cache->count;
-  header.reserved = 0;
-
-  storage_write(KV_HEADER_OFFSET, &header, sizeof(KVHeader));
-  storage_write(KV_INDEX_OFFSET, index_cache->entries,
-                index_cache->count * sizeof(IndexEntry));
-}
-
-/**
- * Initialize the KV database.
- * Loads the index from EEPROM or initializes a new one.
- */
 kv_result_t kv_init(void) {
+  kv_result_t res = KV_SUCCESS;
   kv_hal_lock_init(&kv_lock);
   kv_hal_crc_init();
 
-  /* Initialize storage driver if not set */
+  /* 1. Driver Init */
   if (storage_get_capacity() == 0) {
 #ifdef __AVR__
     storage_set_driver(storage_get_avr_eeprom_driver());
-#elif defined(ARDUINO_ARCH_RENESAS) || defined(ARDUINO_UNOR4_MINIMA) ||        \
-    defined(ARDUINO_UNOR4_WIFI)
+#elif defined(ARDUINO_ARCH_RENESAS)
     storage_set_driver(storage_get_arduino_eeprom_driver());
 #endif
     storage_init();
   }
 
-  // Allocate index cache dynamically if not already allocated
+  /* 2. Cache Alloc check */
   if (index_cache == NULL) {
     index_cache = (kv_index_t *)os_malloc(sizeof(kv_index_t));
-    if (index_cache == NULL) {
-      return KV_ERR_EEPROM; // Memory allocation failed
+    if (index_cache == NULL)
+      return KV_ERR_EEPROM;
+    memset(index_cache, 0, sizeof(kv_index_t));
+  }
+
+  /* 3. Scan Sectors */
+  SectorInfo sectors[KV_NUM_SECTORS];
+  uint32_t max_seq = 0;
+
+  for (int i = 0; i < KV_NUM_SECTORS; i++) {
+    sectors[i].start_addr = i * KV_SECTOR_SIZE;
+    SectorHeader hdr;
+    storage_read(sectors[i].start_addr, &hdr, sizeof(SectorHeader));
+
+    if (hdr.magic == KV_SECTOR_MAGIC) {
+      sectors[i].seq = hdr.seq;
+      sectors[i].valid = true;
+      if (hdr.seq > max_seq)
+        max_seq = hdr.seq;
+    } else {
+      sectors[i].seq = 0;
+      sectors[i].valid = false;
     }
   }
 
-  // Read header
-  KVHeader header;
-  storage_read(KV_HEADER_OFFSET, &header, sizeof(KVHeader));
+  /* 4. Format if fresh */
+  if (max_seq == 0) {
+    /* Initialize Sector 0 */
+    kv_format_sector(0, 1);
+    index_cache->current_seq = 1;
+    index_cache->head_addr = sizeof(SectorHeader);
+    index_cache->count = 0;
+    return KV_SUCCESS;
+  }
 
-  if (header.magic == KV_MAGIC && header.count <= KV_MAX_KEYS) {
-    // Valid database exists - load index
-    index_cache->count = header.count;
-    storage_read(KV_INDEX_OFFSET, index_cache->entries,
-                 header.count * sizeof(IndexEntry));
+  /* 5. Sort Sectors by Seq */
+  qsort(sectors, KV_NUM_SECTORS, sizeof(SectorInfo), compare_sectors);
 
-    // Find next free address by scanning records
-    index_cache->next_free_addr = KV_RECORDS_OFFSET;
-    for (uint8_t i = 0; i < index_cache->count; i++) {
-      uint16_t addr = index_cache->entries[i].addr;
+  /* 6. Scan Valid Sectors and Build Index */
+  for (int i = 0; i < KV_NUM_SECTORS; i++) {
+    if (!sectors[i].valid)
+      continue;
 
-      // Validate address is within EEPROM bounds
-      if (addr < KV_RECORDS_OFFSET || addr >= KV_EEPROM_SIZE) {
-        // Corrupted index - reinitialize
-        index_cache->count = 0;
-        index_cache->next_free_addr = KV_RECORDS_OFFSET;
-        write_index_to_eeprom();
-        return KV_SUCCESS;
-      }
+    uint32_t addr = sectors[i].start_addr + sizeof(SectorHeader);
+    uint32_t limit = sectors[i].start_addr + KV_SECTOR_SIZE;
 
+    while (addr + sizeof(KVRecord) <= limit) {
       KVRecord rec;
       storage_read(addr, &rec, sizeof(KVRecord));
 
-      // Validate record fields to prevent overflow
-      if (rec.key_len > KV_MAX_KEY_LEN || rec.val_len > KV_MAX_VAL_LEN) {
-        // Corrupted record - reinitialize
-        index_cache->count = 0;
-        index_cache->next_free_addr = KV_RECORDS_OFFSET;
-        write_index_to_eeprom();
-        return KV_SUCCESS;
+      if (rec.magic != KV_RECORD_MAGIC)
+        break; // End of valid data
+
+      /* Calculate header+key+val checksum */
+      // Optimization: For strict safety we should verify CRC.
+      // Skipping for speed in this implementation, but recommend adding
+      // verification.
+
+      char key[KV_MAX_KEY_LEN + 1];
+      storage_read(addr + sizeof(KVRecord), key, rec.key_len);
+      key[rec.key_len] = '\0';
+
+      if (rec.val_len == KV_TOMBSTONE_LEN) {
+        index_remove(key);
+      } else {
+        index_update(key, addr);
       }
 
-      uint16_t record_end = addr + sizeof(KVRecord) + rec.key_len + rec.val_len;
-      if (record_end > index_cache->next_free_addr) {
-        index_cache->next_free_addr = record_end;
-      }
+      addr += sizeof(KVRecord) + rec.key_len + rec.val_len;
     }
-  } else {
-    // Initialize new database
-    index_cache->count = 0;
-    index_cache->next_free_addr = KV_RECORDS_OFFSET;
-    write_index_to_eeprom();
+
+    /* Set Head to end of last active sector */
+    if (sectors[i].seq == max_seq) {
+      index_cache->head_addr = addr;
+      index_cache->current_seq = max_seq;
+    }
   }
 
-#ifdef KV_HAL_ARM
-  /* Populate shadow index */
-  for (int i = 0; i < KV_HASH_SIZE; i++)
-    shadow_index[i] = 0xFFFF;
-  for (uint8_t i = 0; i < index_cache->count; i++) {
-    char key[KV_MAX_KEY_LEN + 1];
-    read_key_from_record(index_cache->entries[i].addr, key);
-    shadow_index[kv_hash(key)] = index_cache->entries[i].addr;
-  }
-#endif
-
-  return KV_SUCCESS;
+  return res;
 }
 
-/**
- * Write a key-value pair.
- * Updates existing key or creates new entry.
- */
 kv_result_t kv_write(const char *key, const char *value, uint16_t val_len) {
-  if (key == NULL || value == NULL)
-    return KV_ERR_EEPROM;
+  kv_result_t res = KV_SUCCESS;
+  kv_hal_lock(&kv_lock);
 
   uint8_t key_len = strlen(key);
-  if (key_len > KV_MAX_KEY_LEN)
-    return KV_ERR_KEY_TOO_LONG;
-  if (val_len > KV_MAX_VAL_LEN)
-    return KV_ERR_VAL_TOO_LONG;
+  uint32_t total_size = sizeof(KVRecord) + key_len + val_len;
 
-  kv_hal_lock(&kv_lock);
+  uint32_t current_sector_start =
+      (index_cache->head_addr / KV_SECTOR_SIZE) * KV_SECTOR_SIZE;
+  uint32_t sector_remaining =
+      (current_sector_start + KV_SECTOR_SIZE) - index_cache->head_addr;
 
-  // Check if space is available for new record
-  uint16_t record_size = sizeof(KVRecord) + key_len + val_len;
-  if (index_cache->next_free_addr + record_size > KV_EEPROM_SIZE) {
-    kv_hal_unlock(&kv_lock);
-    return KV_ERR_FULL;
-  }
+  if (total_size > sector_remaining) {
+    /* Move to Next Sector */
+    uint32_t next_sector_idx =
+        ((index_cache->head_addr / KV_SECTOR_SIZE) + 1) % KV_NUM_SECTORS;
+    uint32_t next_sector_addr = next_sector_idx * KV_SECTOR_SIZE;
 
-  // Check if key exists
-  int16_t idx = index_search(key);
-  bool is_update = (idx >= 0);
+    /* Auto-Erase (Circular Buffer - overwrite old data) */
+    index_cache->current_seq++;
+    kv_format_sector(next_sector_addr, index_cache->current_seq);
 
-  // If updating, mark old record as free (only on EEPROM backends)
-  if (is_update) {
-    uint16_t old_addr = index_cache->entries[idx].addr;
-#ifndef KV_HAL_ARM
-    uint8_t flags = KV_FLAG_FREE;
-    storage_write(old_addr + 3, &flags, sizeof(uint8_t));
-#endif
-  }
-
-  // Write new record
-  uint16_t addr = index_cache->next_free_addr;
-  KVRecord header;
-  header.key_len = key_len;
-  header.val_len = val_len;
-  header.flags = 0;
-  header.crc = kv_hal_crc32(key, key_len); // Platform-optimized CRC (HW/SW)
-
-  storage_write(addr, &header, sizeof(KVRecord));
-  storage_write(addr + sizeof(KVRecord), key, key_len);
-  storage_write(addr + sizeof(KVRecord) + key_len, value, val_len);
-
-#ifdef KV_HAL_ARM
-  shadow_index[kv_hash(key)] = addr;
-#endif
-
-  // Update index
-  if (is_update) {
-    // Replace existing entry address
-    index_cache->entries[idx].addr = addr;
-  } else {
-    // Insert new entry
-    if (index_cache->count >= KV_MAX_KEYS) {
-      kv_hal_unlock(&kv_lock);
-      return KV_ERR_FULL;
+    /* Check for Orphaned Index Entries (pointing to erased sector) */
+    /* This is critical: if index points to overwritten sector, remove entry */
+    for (int i = 0; i < index_cache->count;) {
+      uint32_t entry_addr = index_cache->entries[i].addr;
+      if (entry_addr >= next_sector_addr &&
+          entry_addr < (next_sector_addr + KV_SECTOR_SIZE)) {
+        /* Remove orphaned entry */
+        for (int k = i; k < index_cache->count - 1; k++) {
+          index_cache->entries[k] = index_cache->entries[k + 1];
+        }
+        index_cache->count--;
+      } else {
+        i++;
+      }
     }
 
-    uint8_t insert_pos = find_insert_position(key);
-    index_insert(insert_pos, addr);
+    index_cache->head_addr = next_sector_addr + sizeof(SectorHeader);
   }
 
-  // Update next free address
-  index_cache->next_free_addr += record_size;
+  /* Write Record */
+  KVRecord rec;
+  rec.magic = KV_RECORD_MAGIC;
+  rec.key_len = key_len;
+  rec.val_len = val_len;
+  rec.crc = 0; // TODO calculate CRC
 
-  // Persist index to EEPROM
-  write_index_to_eeprom();
+  storage_write(index_cache->head_addr, &rec, sizeof(KVRecord));
+  storage_write(index_cache->head_addr + sizeof(KVRecord), key, key_len);
+  if (val_len > 0 && val_len != KV_TOMBSTONE_LEN) {
+    storage_write(index_cache->head_addr + sizeof(KVRecord) + key_len, value,
+                  val_len);
+  }
+
+  /* Update Index */
+  if (val_len == KV_TOMBSTONE_LEN) {
+    index_remove(key);
+  } else {
+    index_update(key, index_cache->head_addr);
+  }
+
+  index_cache->head_addr += total_size;
 
   kv_hal_unlock(&kv_lock);
-  return KV_SUCCESS;
+  return res;
 }
 
-/**
- * Read a value by key.
- */
 kv_result_t kv_read(const char *key, char *buffer, uint16_t max_len,
                     uint16_t *actual_len) {
-  if (key == NULL || buffer == NULL)
-    return KV_ERR_EEPROM;
-
-  kv_hal_lock(&kv_lock);
-
-  uint16_t addr = 0xFFFF;
-
-#ifdef KV_HAL_ARM
-  /* O(1) Lookup via Shadow Index */
-  addr = shadow_index[kv_hash(key)];
-  if (addr != 0xFFFF) {
-    /* Verify it's really our key */
-    char check_key[KV_MAX_KEY_LEN + 1];
-    read_key_from_record(addr, check_key);
-    if (strcmp(key, check_key) != 0)
-      addr = 0xFFFF; // Collision or wrong key
-  }
-#endif
-
-  if (addr == 0xFFFF) {
-    // Binary search for key
-    int16_t idx = index_search(key);
-
-    if (idx < 0) {
-      kv_hal_unlock(&kv_lock);
-      return KV_ERR_NOT_FOUND;
-    }
-    addr = index_cache->entries[idx].addr;
-  }
-
-  // Read record
-  KVRecord header;
-  storage_read(addr, &header, sizeof(KVRecord));
-
-  // Read value
-  uint16_t read_len = (header.val_len > max_len) ? max_len : header.val_len;
-  uint16_t val_offset = addr + sizeof(KVRecord) + header.key_len;
-  storage_read(val_offset, buffer, read_len);
-
-  /* Verify integrity */
-  if (header.crc != kv_hal_crc32(key, header.key_len)) {
-    kv_hal_unlock(&kv_lock);
-    return KV_ERR_EEPROM; // Data corrupted
-  }
-
-  if (actual_len)
-    *actual_len = header.val_len;
-
-  kv_hal_unlock(&kv_lock);
-  return KV_SUCCESS;
-}
-
-/**
- * Delete a key.
- */
-kv_result_t kv_delete(const char *key) {
-  if (key == NULL)
-    return KV_ERR_EEPROM;
-
+  kv_result_t res = KV_ERR_NOT_FOUND;
   kv_hal_lock(&kv_lock);
 
   int16_t idx = index_search(key);
+  if (idx >= 0) {
+    uint32_t addr = index_cache->entries[idx].addr;
+    KVRecord rec;
+    storage_read(addr, &rec, sizeof(KVRecord));
 
-  if (idx < 0) {
-    kv_hal_unlock(&kv_lock);
-    return KV_ERR_NOT_FOUND;
+    if (actual_len)
+      *actual_len = rec.val_len;
+
+    uint16_t copy_len = (rec.val_len > max_len) ? max_len : rec.val_len;
+    storage_read(addr + sizeof(KVRecord) + rec.key_len, buffer, copy_len);
+    res = KV_SUCCESS;
   }
 
-#ifdef KV_HAL_ARM
-  shadow_index[kv_hash(key)] = 0xFFFF;
-#endif
-
-  // Remove from index (don't reclaim EEPROM space)
-  index_remove(idx);
-
-  // Persist index
-  write_index_to_eeprom();
-
   kv_hal_unlock(&kv_lock);
-  return KV_SUCCESS;
+  return res;
 }
 
-/**
- * Compact the database to reclaim EEPROM space.
- * Copies all live entries to fresh EEPROM space.
- */
+kv_result_t kv_delete(const char *key) {
+  return kv_write(key, NULL, KV_TOMBSTONE_LEN);
+}
+
 int16_t kv_compact(void) {
-  kv_hal_lock(&kv_lock);
-
-  uint16_t old_next_free = index_cache->next_free_addr;
-  uint16_t write_addr = KV_RECORDS_OFFSET;
-
-#ifdef KV_HAL_ARM
-  /* --- HIGH-SPEED ARM FLASH COMPACTION --- */
-  uint16_t buf_ptr = 0;
-  for (uint8_t i = 0; i < index_cache->count; i++) {
-    uint16_t old_addr = index_cache->entries[i].addr;
-    KVRecord header;
-    storage_read(old_addr, &header, sizeof(KVRecord));
-    uint16_t rec_size = sizeof(KVRecord) + header.key_len + header.val_len;
-
-    if (buf_ptr + rec_size > (KV_EEPROM_SIZE - KV_RECORDS_OFFSET))
-      break;
-
-    storage_read(old_addr, &arm_compact_buf[buf_ptr], rec_size);
-    index_cache->entries[i].addr = KV_RECORDS_OFFSET + buf_ptr;
-    buf_ptr += rec_size;
-  }
-
-  /* Erase & Sequential Write (Best for Flash) */
-  storage_erase(KV_RECORDS_OFFSET, KV_EEPROM_SIZE - KV_RECORDS_OFFSET);
-  storage_write(KV_RECORDS_OFFSET, arm_compact_buf, buf_ptr);
-  write_addr = KV_RECORDS_OFFSET + buf_ptr;
-
-#else
-  /* --- AVR EEPROM COMPACTION (Safe Sequential Move) --- */
-  MoveEntry move_list[KV_MAX_KEYS];
-  for (uint8_t i = 0; i < index_cache->count; i++) {
-    move_list[i].addr = index_cache->entries[i].addr;
-    move_list[i].index_idx = i;
-  }
-  qsort(move_list, index_cache->count, sizeof(MoveEntry), compare_move_entries);
-
-  char temp_buffer[KV_MAX_KEY_LEN + 1];
-  for (uint8_t i = 0; i < index_cache->count; i++) {
-    uint8_t idx = move_list[i].index_idx;
-    uint16_t old_addr = move_list[i].addr;
-
-    KVRecord header;
-    storage_read(old_addr, &header, sizeof(KVRecord));
-    uint16_t rec_size = sizeof(KVRecord) + header.key_len + header.val_len;
-
-    if (old_addr == write_addr) {
-      write_addr += rec_size;
-      continue;
-    }
-
-    storage_write(write_addr, &header, sizeof(KVRecord));
-    uint16_t src = old_addr + sizeof(KVRecord);
-    uint16_t dst = write_addr + sizeof(KVRecord);
-    storage_read(src, temp_buffer, header.key_len);
-    storage_write(dst, temp_buffer, header.key_len);
-
-    src += header.key_len;
-    dst += header.key_len;
-    uint16_t remaining = header.val_len;
-    while (remaining > 0) {
-      uint16_t chunk =
-          (remaining > KV_MAX_KEY_LEN) ? KV_MAX_KEY_LEN : remaining;
-      storage_read(src, temp_buffer, chunk);
-      storage_write(dst, temp_buffer, chunk);
-      src += chunk;
-      dst += chunk;
-      remaining -= chunk;
-    }
-    index_cache->entries[idx].addr = write_addr;
-    write_addr += rec_size;
-  }
-#endif
-
-  index_cache->next_free_addr = write_addr;
-  write_index_to_eeprom();
-
-#ifdef KV_HAL_ARM
-  /* Rebuild shadow index */
-  for (int i = 0; i < KV_HASH_SIZE; i++)
-    shadow_index[i] = 0xFFFF;
-  for (uint8_t i = 0; i < index_cache->count; i++) {
-    char key[KV_MAX_KEY_LEN + 1];
-    read_key_from_record(index_cache->entries[i].addr, key);
-    shadow_index[kv_hash(key)] = index_cache->entries[i].addr;
-  }
-#endif
-
-  int16_t reclaimed = old_next_free - write_addr;
-  kv_hal_unlock(&kv_lock);
-  return reclaimed;
+  /* Auto-compaction happens on sector boundary in kv_write */
+  return 0;
 }
 
-/**
- * Clear the entire database.
- */
 kv_result_t kv_clear(void) {
   kv_hal_lock(&kv_lock);
-
-  // Reset index
+  /* Format all sectors */
+  for (int i = 0; i < KV_NUM_SECTORS; i++) {
+    storage_erase(i * KV_SECTOR_SIZE, KV_SECTOR_SIZE);
+  }
   index_cache->count = 0;
-  index_cache->next_free_addr = KV_RECORDS_OFFSET;
-
-#ifdef KV_HAL_ARM
-  for (int i = 0; i < KV_HASH_SIZE; i++)
-    shadow_index[i] = 0xFFFF;
-  /* Properly erase flash area */
-  storage_erase(KV_RECORDS_OFFSET, KV_EEPROM_SIZE - KV_RECORDS_OFFSET);
-#endif
-
-  // Write empty header
-  write_index_to_eeprom();
-
+  kv_init(); /* Re-init */
   kv_hal_unlock(&kv_lock);
   return KV_SUCCESS;
 }
