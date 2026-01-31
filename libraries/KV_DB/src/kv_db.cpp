@@ -7,12 +7,13 @@
 // Global state
 static Mutex kv_mutex;
 
-// SRAM cache for the index
-static struct {
+typedef struct {
   uint8_t count;                   // Current number of keys
   IndexEntry entries[KV_MAX_KEYS]; // Sorted array of record addresses
   uint16_t next_free_addr;         // Next allocation address
-} index_cache;
+} kv_index_t;
+
+static kv_index_t *index_cache = NULL;
 
 /**
  * Read a key from EEPROM at the given record address.
@@ -44,11 +45,11 @@ static int8_t compare_keys(const char *key1, uint16_t addr2) {
  */
 static int16_t index_search(const char *key) {
   int16_t left = 0;
-  int16_t right = index_cache.count - 1;
+  int16_t right = index_cache->count - 1;
 
   while (left <= right) {
     int16_t mid = left + (right - left) / 2;
-    int8_t cmp = compare_keys(key, index_cache.entries[mid].addr);
+    int8_t cmp = compare_keys(key, index_cache->entries[mid].addr);
 
     if (cmp == 0) {
       return mid; // Found
@@ -67,16 +68,16 @@ static int16_t index_search(const char *key) {
  * Returns the index where the key should be inserted.
  */
 static uint8_t find_insert_position(const char *key) {
-  if (index_cache.count == 0) {
+  if (index_cache->count == 0) {
     return 0;
   }
 
   int16_t left = 0;
-  int16_t right = index_cache.count - 1;
+  int16_t right = index_cache->count - 1;
 
   while (left <= right) {
     int16_t mid = left + (right - left) / 2;
-    int8_t cmp = compare_keys(key, index_cache.entries[mid].addr);
+    int8_t cmp = compare_keys(key, index_cache->entries[mid].addr);
 
     if (cmp < 0) {
       right = mid - 1;
@@ -96,18 +97,18 @@ static uint8_t find_insert_position(const char *key) {
  */
 static void index_insert(uint8_t pos, uint16_t addr) {
   // Bounds check (defensive programming)
-  if (index_cache.count >= KV_MAX_KEYS) {
+  if (index_cache->count >= KV_MAX_KEYS) {
     return; // Should never happen if callers validate properly
   }
 
   // Shift entries to the right
-  for (uint8_t i = index_cache.count; i > pos; i--) {
-    index_cache.entries[i] = index_cache.entries[i - 1];
+  for (uint8_t i = index_cache->count; i > pos; i--) {
+    index_cache->entries[i] = index_cache->entries[i - 1];
   }
 
   // Insert new entry
-  index_cache.entries[pos].addr = addr;
-  index_cache.count++;
+  index_cache->entries[pos].addr = addr;
+  index_cache->count++;
 }
 
 /**
@@ -116,11 +117,11 @@ static void index_insert(uint8_t pos, uint16_t addr) {
  */
 static void index_remove(uint8_t pos) {
   // Shift entries to the left
-  for (uint8_t i = pos; i < index_cache.count - 1; i++) {
-    index_cache.entries[i] = index_cache.entries[i + 1];
+  for (uint8_t i = pos; i < index_cache->count - 1; i++) {
+    index_cache->entries[i] = index_cache->entries[i + 1];
   }
 
-  index_cache.count--;
+  index_cache->count--;
 }
 
 /**
@@ -129,12 +130,12 @@ static void index_remove(uint8_t pos) {
 static void write_index_to_eeprom(void) {
   KVHeader header;
   header.magic = KV_MAGIC;
-  header.count = index_cache.count;
+  header.count = index_cache->count;
   header.reserved = 0;
 
   storage_write(KV_HEADER_OFFSET, &header, sizeof(KVHeader));
-  storage_write(KV_INDEX_OFFSET, index_cache.entries,
-                index_cache.count * sizeof(IndexEntry));
+  storage_write(KV_INDEX_OFFSET, index_cache->entries,
+                index_cache->count * sizeof(IndexEntry));
 }
 
 /**
@@ -155,26 +156,34 @@ kv_result_t kv_init(void) {
     storage_init();
   }
 
+  // Allocate index cache dynamically if not already allocated
+  if (index_cache == NULL) {
+    index_cache = (kv_index_t *)os_malloc(sizeof(kv_index_t));
+    if (index_cache == NULL) {
+      return KV_ERR_EEPROM; // Memory allocation failed
+    }
+  }
+
   // Read header
   KVHeader header;
   storage_read(KV_HEADER_OFFSET, &header, sizeof(KVHeader));
 
   if (header.magic == KV_MAGIC && header.count <= KV_MAX_KEYS) {
     // Valid database exists - load index
-    index_cache.count = header.count;
-    storage_read(KV_INDEX_OFFSET, index_cache.entries,
+    index_cache->count = header.count;
+    storage_read(KV_INDEX_OFFSET, index_cache->entries,
                  header.count * sizeof(IndexEntry));
 
     // Find next free address by scanning records
-    index_cache.next_free_addr = KV_RECORDS_OFFSET;
-    for (uint8_t i = 0; i < index_cache.count; i++) {
-      uint16_t addr = index_cache.entries[i].addr;
+    index_cache->next_free_addr = KV_RECORDS_OFFSET;
+    for (uint8_t i = 0; i < index_cache->count; i++) {
+      uint16_t addr = index_cache->entries[i].addr;
 
       // Validate address is within EEPROM bounds
       if (addr < KV_RECORDS_OFFSET || addr >= KV_EEPROM_SIZE) {
         // Corrupted index - reinitialize
-        index_cache.count = 0;
-        index_cache.next_free_addr = KV_RECORDS_OFFSET;
+        index_cache->count = 0;
+        index_cache->next_free_addr = KV_RECORDS_OFFSET;
         write_index_to_eeprom();
         return KV_SUCCESS;
       }
@@ -185,21 +194,21 @@ kv_result_t kv_init(void) {
       // Validate record fields to prevent overflow
       if (rec.key_len > KV_MAX_KEY_LEN || rec.val_len > KV_MAX_VAL_LEN) {
         // Corrupted record - reinitialize
-        index_cache.count = 0;
-        index_cache.next_free_addr = KV_RECORDS_OFFSET;
+        index_cache->count = 0;
+        index_cache->next_free_addr = KV_RECORDS_OFFSET;
         write_index_to_eeprom();
         return KV_SUCCESS;
       }
 
       uint16_t record_end = addr + sizeof(KVRecord) + rec.key_len + rec.val_len;
-      if (record_end > index_cache.next_free_addr) {
-        index_cache.next_free_addr = record_end;
+      if (record_end > index_cache->next_free_addr) {
+        index_cache->next_free_addr = record_end;
       }
     }
   } else {
     // Initialize new database
-    index_cache.count = 0;
-    index_cache.next_free_addr = KV_RECORDS_OFFSET;
+    index_cache->count = 0;
+    index_cache->next_free_addr = KV_RECORDS_OFFSET;
     write_index_to_eeprom();
   }
 
@@ -224,7 +233,7 @@ kv_result_t kv_write(const char *key, const char *value, uint16_t val_len) {
 
   // Check if space is available for new record
   uint16_t record_size = sizeof(KVRecord) + key_len + val_len;
-  if (index_cache.next_free_addr + record_size > KV_EEPROM_SIZE) {
+  if (index_cache->next_free_addr + record_size > KV_EEPROM_SIZE) {
     os_mutex_unlock(&kv_mutex);
     return KV_ERR_FULL;
   }
@@ -235,14 +244,14 @@ kv_result_t kv_write(const char *key, const char *value, uint16_t val_len) {
 
   // If updating, mark old record as free
   if (is_update) {
-    uint16_t old_addr = index_cache.entries[idx].addr;
+    uint16_t old_addr = index_cache->entries[idx].addr;
     uint8_t flags = KV_FLAG_FREE;
     // Write flag to EEPROM (offset 3 in KVRecord struct)
     storage_write(old_addr + 3, &flags, sizeof(uint8_t));
   }
 
   // Write new record
-  uint16_t addr = index_cache.next_free_addr;
+  uint16_t addr = index_cache->next_free_addr;
   KVRecord header;
   header.key_len = key_len;
   header.val_len = val_len;
@@ -255,10 +264,10 @@ kv_result_t kv_write(const char *key, const char *value, uint16_t val_len) {
   // Update index
   if (is_update) {
     // Replace existing entry address
-    index_cache.entries[idx].addr = addr;
+    index_cache->entries[idx].addr = addr;
   } else {
     // Insert new entry
-    if (index_cache.count >= KV_MAX_KEYS) {
+    if (index_cache->count >= KV_MAX_KEYS) {
       os_mutex_unlock(&kv_mutex);
       return KV_ERR_FULL;
     }
@@ -268,7 +277,7 @@ kv_result_t kv_write(const char *key, const char *value, uint16_t val_len) {
   }
 
   // Update next free address
-  index_cache.next_free_addr += record_size;
+  index_cache->next_free_addr += record_size;
 
   // Persist index to EEPROM
   write_index_to_eeprom();
@@ -296,7 +305,7 @@ kv_result_t kv_read(const char *key, char *buffer, uint16_t max_len,
   }
 
   // Read record
-  uint16_t addr = index_cache.entries[idx].addr;
+  uint16_t addr = index_cache->entries[idx].addr;
   KVRecord header;
   storage_read(addr, &header, sizeof(KVRecord));
 
@@ -345,15 +354,15 @@ kv_result_t kv_delete(const char *key) {
 int16_t kv_compact(void) {
   os_mutex_lock(&kv_mutex);
 
-  uint16_t old_next_free = index_cache.next_free_addr;
+  uint16_t old_next_free = index_cache->next_free_addr;
   uint16_t write_addr = KV_RECORDS_OFFSET;
 
   // Temporary buffer for copying record data
   char temp_buffer[KV_MAX_KEY_LEN + 1];
 
   // Process each entry in the index
-  for (uint8_t i = 0; i < index_cache.count; i++) {
-    uint16_t old_addr = index_cache.entries[i].addr;
+  for (uint8_t i = 0; i < index_cache->count; i++) {
+    uint16_t old_addr = index_cache->entries[i].addr;
 
     // Read the record header
     KVRecord header;
@@ -404,14 +413,14 @@ int16_t kv_compact(void) {
     }
 
     // Update index entry with new address
-    index_cache.entries[i].addr = write_addr;
+    index_cache->entries[i].addr = write_addr;
 
     // Move write pointer forward
     write_addr += record_size;
   }
 
   // Update next free address
-  index_cache.next_free_addr = write_addr;
+  index_cache->next_free_addr = write_addr;
 
   // Persist updated index to EEPROM
   write_index_to_eeprom();
@@ -430,8 +439,8 @@ kv_result_t kv_clear(void) {
   os_mutex_lock(&kv_mutex);
 
   // Reset index
-  index_cache.count = 0;
-  index_cache.next_free_addr = KV_RECORDS_OFFSET;
+  index_cache->count = 0;
+  index_cache->next_free_addr = KV_RECORDS_OFFSET;
 
   // Write empty header
   write_index_to_eeprom();

@@ -36,7 +36,7 @@
  * Default: 6 tasks
  */
 #ifndef TOYOS_MAX_TASKS
-#define TOYOS_MAX_TASKS 6
+#define TOYOS_MAX_TASKS 4
 #endif
 
 /**

@@ -3,7 +3,7 @@
 #include <kv_db.h>
 #include <toyos.h>
 
-static uint8_t mem_pool[512] __attribute__((aligned(2)));
+static uint8_t mem_pool[896] __attribute__((aligned(2)));
 
 Mutex serial_mutex;
 
@@ -16,14 +16,16 @@ void log_msg(const __FlashStringHelper *msg) {
 }
 
 void task_db_demo(void) {
-  run_all_tests();
-  log_msg(F("[DB] Starting KV Database Demo..."));
+  log_msg(F("[DB] Initializing KV Database..."));
 
   if (kv_init() != KV_SUCCESS) {
     log_msg(F("[DB] Error initializing database!"));
     while (1)
       os_delay(1000);
   }
+
+  run_all_tests();
+  log_msg(F("[DB] Starting KV Database Demo..."));
 
   // 1. Write a key
   log_msg(F("[DB] Writing key 'username' with value 'julia'..."));
@@ -113,8 +115,8 @@ void setup() {
 
   /* Create tasks */
   os_create_task(1, task_db_demo, 1,
-                 400);                  /* ID 1, DB Task, Prio 1, Stack 400 */
-  os_create_task(2, task_idle, 0, 200); /* ID 2, Idle Task, Prio 0, Stack 200 */
+                 350);                  /* ID 1, DB Task, Prio 1, Stack 350 */
+  os_create_task(2, task_idle, 0, 100); /* ID 2, Idle Task, Prio 0, Stack 100 */
 
   /* Start the RTOS (never returns) */
   os_start();

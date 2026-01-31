@@ -119,8 +119,15 @@ void test_eeprom_full(void) {
 
   // Fill until full
   while (true) {
-    static int count = 0;
-    snprintf(key, sizeof(key), "k%d", count++);
+    static uint8_t count = 0;
+    key[0] = 'k';
+    key[1] = '0' + (count / 10);
+    key[2] = '0' + (count % 10);
+    key[3] = '\0';
+    count++;
+
+    os_wdt_feed(); // Feed watchdog during long operation
+
     kv_result_t res = kv_write(key, val, strlen(val));
     if (res == KV_ERR_FULL) {
       test_log("EEPROM Full handling", true);
@@ -159,16 +166,23 @@ void task_writer2(void) {
 }
 
 void test_concurrency(void) {
+  kv_clear();
   task1_done = false;
   task2_done = false;
 
   // We expect these tasks to run concurrently without corruption due to Mutex
-  os_create_task(30, task_writer1, 5, 128);
-  os_create_task(31, task_writer2, 5, 128);
+  os_create_task(3, task_writer1, 3, 140);
+  os_create_task(4, task_writer2, 3, 140);
 
   // Wait for tasks to finish
+  uint16_t timeout = 0;
   while (!task1_done || !task2_done) {
     os_delay(100);
+    timeout++;
+    if (timeout > 100) { // 10s timeout
+      test_log("Concurrency (Timeout)", false);
+      return;
+    }
   }
 
   char b1[8], b2[8];

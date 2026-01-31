@@ -29,7 +29,7 @@ typedef struct {
   uint16_t magic;   // 0x4B56 ('KV')
   uint8_t count;    // Number of keys in index
   uint8_t reserved; // Reserved for future use
-} KVHeader;
+} __attribute__((packed)) KVHeader;
 
 /**
  * Index entry stored in EEPROM.
@@ -37,7 +37,7 @@ typedef struct {
  */
 typedef struct {
   uint16_t addr; // EEPROM address of the KV record
-} IndexEntry;
+} __attribute__((packed)) IndexEntry;
 
 /**
  * KV Record header stored in EEPROM.
@@ -47,7 +47,7 @@ typedef struct {
   uint8_t key_len;  // Length of key string (not including null)
   uint16_t val_len; // Length of value
   uint8_t flags;    // bit 0: is_free
-} KVRecord;
+} __attribute__((packed)) KVRecord;
 
 #define KV_MAGIC 0x4B56
 #define KV_FLAG_FREE 0x01

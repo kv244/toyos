@@ -5,8 +5,8 @@
 #include <Arduino.h>
 #endif
 
-/* Static Task Pool - no dynamic allocation overhead */
-static TaskNode task_pool[MAX_TASKS];
+/* Dynamic Task Pool - allocated during os_init to save global RAM */
+static TaskNode *task_pool = NULL;
 static uint8_t task_pool_index = 0;
 
 /* Global Kernel Instance */
@@ -58,6 +58,11 @@ void os_init(uint8_t *mem_pool, uint16_t mem_size) {
   first_block->next = NULL;
 
   kernel.mem_manager.free_list_head = (void *)first_block;
+
+  /* Initialize task pool dynamically to reduce global footprint */
+  if (task_pool == NULL) {
+    task_pool = (TaskNode *)os_malloc(sizeof(TaskNode) * MAX_TASKS);
+  }
 
   /* Reset task pool index */
   task_pool_index = 0;
