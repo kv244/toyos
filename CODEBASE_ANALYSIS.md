@@ -336,6 +336,17 @@ STATIC_ASSERT(sizeof(TaskControlBlock) < 256, tcb_too_large);
 8. 💡 Add compile-time assertions
 9. 💡 Expand unit test coverage
 
+### Phase 4: ARM MPU-Based Memory Protection (High Priority for ARM)
+10. 🔴 **MPU Implementation** - Hardware-enforced task isolation (ARM only)
+    - **Task Isolation**: Prevent tasks from accessing each other's memory
+    - **Stack Protection**: Hardware-detected stack overflows
+    - **Heap Protection**: Guard pages prevent heap corruption
+    - **Kernel Protection**: User tasks cannot modify kernel structures
+    - **See**: `MPU_IMPLEMENTATION_PLAN.md` for detailed roadmap
+    - **Estimated Time**: 4 weeks
+    - **Benefits**: Significantly improved security and debugging
+    - **Overhead**: ~10-20 cycles per context switch, ~200-300 bytes code
+
 ---
 
 ## 📝 Conclusion
