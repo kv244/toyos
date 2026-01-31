@@ -1,6 +1,6 @@
 # ToyOS - Tiny Operating System for Arduino
 
-**Version 2.2 - FIXED & OPTIMIZED**
+**Version 2.3 - DYNAMIC MEMORY & STABILITY**
 **Status:** ✅ Production Ready for Hobbyist/Edu
 **Last Updated:** January 2026
 
