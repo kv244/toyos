@@ -653,8 +653,10 @@ MessageQueue *os_mq_create(uint8_t capacity) {
   if (!mq)
     return NULL;
   mq->buffer = (void **)os_malloc(capacity * sizeof(void *));
-  if (!mq->buffer)
+  if (!mq->buffer) {
+    os_free(mq);
     return NULL;
+  }
 
   mq->capacity = capacity;
   mq->head = 0;
