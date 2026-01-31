@@ -67,8 +67,16 @@ static uint8_t *os_init_stack(uint16_t stack_size, void (*task_func)(void),
   return sp;
 }
 
-/* Initialize the OS */
+/* Block Header for Free List Allocator */
+typedef struct BlockHeader {
+  uint16_t size; /* Size of the user data following this header */
+  struct BlockHeader
+      *next; /* Pointer to the next FREE block (NULL if allocated) */
+} BlockHeader;
+
+/* Initialize the OS and Memory Manager */
 void os_init(uint8_t *mem_pool, uint16_t mem_size) {
+  /* Zero out kernel state */
   kernel.ready_heap.size = 0;
   kernel.blocked_queue.head = NULL;
   kernel.blocked_queue.tail = NULL;
@@ -78,13 +86,113 @@ void os_init(uint8_t *mem_pool, uint16_t mem_size) {
   kernel.system_tick = 0;
   kernel.task_count = 0;
 
-  /* Initialize memory manager */
-  kernel.mem_manager.memory_pool = mem_pool;
-  kernel.mem_manager.total_size = mem_size;
-  kernel.mem_manager.allocated = 0;
+  /* Initialize Free List Memory Manager */
+  uintptr_t start_addr = (uintptr_t)mem_pool;
+
+  /* Ensure 2-byte alignment */
+  if (start_addr % 2 != 0) {
+    start_addr++;
+    mem_size--;
+  }
+
+  /* Initial free block covers the entire pool */
+  BlockHeader *first_block = (BlockHeader *)start_addr;
+  first_block->size = mem_size - sizeof(BlockHeader);
+  first_block->next = NULL;
+
+  kernel.mem_manager.free_list_head = (void *)first_block;
 
   /* Reset task pool index */
   task_pool_index = 0;
+}
+
+// ... heap helpers omitted (unchanged) ...
+
+/* Memory Allocation - First Fit Strategy */
+void *os_malloc(uint16_t size) {
+  if (size == 0)
+    return NULL;
+
+  /* Align size to 2-byte boundary */
+  if (size % 2 != 0)
+    size++;
+
+  BlockHeader *prev = NULL;
+  BlockHeader *curr = (BlockHeader *)kernel.mem_manager.free_list_head;
+
+  while (curr != NULL) {
+    if (curr->size >= size) {
+      /* Found a fit! Check if we can split */
+      if (curr->size >= size + sizeof(BlockHeader) + 4) {
+        /* SPLIT: Create new free block from remainder */
+        BlockHeader *new_block =
+            (BlockHeader *)((uint8_t *)curr + sizeof(BlockHeader) + size);
+        new_block->size = curr->size - size - sizeof(BlockHeader);
+        new_block->next = curr->next;
+
+        /* Update current block size */
+        curr->size = size;
+        curr->next = new_block; /* temporary link for insertion logic below */
+      }
+
+      /* Remove 'curr' from free list */
+      if (prev) {
+        prev->next = curr->next;
+      } else {
+        kernel.mem_manager.free_list_head = curr->next;
+      }
+
+      /* Mark as allocated */
+      curr->next = NULL;
+
+      /* Return pointer to user data */
+      return (void *)((uint8_t *)curr + sizeof(BlockHeader));
+    }
+    prev = curr;
+    curr = curr->next;
+  }
+  return NULL; /* Out of memory */
+}
+
+/* Memory Deallocation - Coalescing Strategy */
+void os_free(void *ptr) {
+  if (!ptr)
+    return;
+
+  /* Recover header */
+  BlockHeader *block = (BlockHeader *)((uint8_t *)ptr - sizeof(BlockHeader));
+
+  /* Insert into sorted free list */
+  BlockHeader *prev = NULL;
+  BlockHeader *curr = (BlockHeader *)kernel.mem_manager.free_list_head;
+
+  /* Find insertion point (sorted by address) */
+  while (curr != NULL && curr < block) {
+    prev = curr;
+    curr = curr->next;
+  }
+
+  /* Insert */
+  if (prev) {
+    prev->next = block;
+  } else {
+    kernel.mem_manager.free_list_head = block;
+  }
+  block->next = curr;
+
+  /* Coalesce with NEXT block */
+  if (curr && ((uint8_t *)block + sizeof(BlockHeader) + block->size) ==
+                  (uint8_t *)curr) {
+    block->size += sizeof(BlockHeader) + curr->size;
+    block->next = curr->next;
+  }
+
+  /* Coalesce with PREV block */
+  if (prev && ((uint8_t *)prev + sizeof(BlockHeader) + prev->size) ==
+                  (uint8_t *)block) {
+    prev->size += sizeof(BlockHeader) + block->size;
+    prev->next = block->next;
+  }
 }
 
 /* Binary Heap Helpers - with assertions */
@@ -424,22 +532,7 @@ void os_task_yield(void) {
   }
 }
 
-/* Simple Memory Allocation (bump allocator) - for user data */
-void *os_malloc(uint16_t size) {
-  /* Align to 2-byte boundary */
-  size = (size + 1) & ~1;
-
-  if (kernel.mem_manager.allocated + size > kernel.mem_manager.total_size) {
-    return NULL; /* Out of memory */
-  }
-
-  uint8_t *ptr = kernel.mem_manager.memory_pool + kernel.mem_manager.allocated;
-  kernel.mem_manager.allocated += size;
-  return ptr;
-}
-
-/* Simple Memory Deallocation (no-op in bump allocator) */
-void os_free(void *ptr) { (void)ptr; /* Unused in bump allocator */ }
+/* Memory Manager Implementation Moved to Top of File */
 
 /* System tick - O(1) delta queue processing */
 void os_system_tick(void) {

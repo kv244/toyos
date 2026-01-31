@@ -23,6 +23,7 @@ ToyOS is a lightweight, preemptive Real-Time Operating System (RTOS) designed sp
 - ✅ **Message Queues**: Thread-safe data passing with "Fast Path" optimization (75% fewer context switches).
 
 ### Memory Efficiency
+- **Dynamic Memory**: `os_malloc` / `os_free` with Coalescing (First-Fit Free List).
 - **Stackless Scheduler**: Uses task stacks directly.
 - **Flash Strings**: `F()` macro support to save SRAM.
 - **Low Footprint**: ~4KB Flash, ~1KB SRAM (leaving ~1KB for user app).
@@ -37,7 +38,7 @@ ToyOS is a lightweight, preemptive Real-Time Operating System (RTOS) designed sp
 
 The system consists of four main components:
 1.  **`toyos.h`**: core configurations and API definitions.
-2.  **`os_kernel_fixed.cpp`**: The kernel logic (scheduler, IPC primitives, memory manager).
+2.  **`os_kernel_fixed.cpp`**: The kernel logic (scheduler, IPC, Free List Allocator).
 3.  **`os_switch_fixed.S`**: Hand-optimized assembly for context switching.
 4.  **`toyos.ino`**: The main application file (sketch).
 
@@ -75,7 +76,8 @@ arduino-cli monitor -p COM6 --config baudrate=9600
 #include "toyos.h"
 #include <Arduino.h>
 
-static uint8_t mem_pool[1024];
+/* Use aligned memory pool for correct malloc behavior */
+static uint8_t mem_pool[1024] __attribute__((aligned(2)));
 
 void task_blink(void) {
   pinMode(13, OUTPUT);
@@ -98,25 +100,25 @@ void loop() {}
 
 ---
 
-## 🎮 Demo Application (Multi-Consumer)
+## 🎮 Demo Application (Multi-Consumer & Allocator Test)
 
-The included `toyos.ino` demonstrates a **Producer-Consumer** pattern using Message Queues:
+The included `toyos.ino` demonstrates a **Producer-Consumer** pattern and **Dynamic Memory Test**:
 
-- **Producer Task**: Generates an integer every 1 second and sends it to `sensor_mq`.
-- **Consumer Tasks 1 & 2**: Two tasks compete to read from the queue. The OS load-balances messages between them.
-- **Fast Path**: Uses `os_mq_send_fast` / `os_mq_receive_fast` for efficient communication.
+- **Producer Task**: Generates data AND tests `os_malloc`/`os_free` every second (stress test).
+- **Consumer Tasks 1 & 2**: Two tasks compete to read from the load-balanced message queue.
+- **Fast Path**: Uses `os_mq_send_fast` / `os_mq_receive_fast`.
 
 ### Expected Serial Output
 ```
-ToyOS V2.2 - Multi-Consumer Demo (FAST MQ)
-================================
+ToyOS V2.2 - Comprehensive Test Suite
+=====================================
+OS Init: OK
+...
 Starting Pre-emptive Scheduler...
-Prod Sent: 0
-Cons2 Got: 0
-Prod Sent: 1
-Cons1 Got: 1
-Prod Sent: 2
-Cons2 Got: 2
+Prod Sent: 0 @ Tick: 1
+Cons2 Got (Fast): 0
+Prod Sent: 1 @ Tick: 1001
+Cons1 Got (Fast): 1
 ```
 
 ---
@@ -133,6 +135,11 @@ Cons2 Got: 2
 ---
 
 ## 📝 Version History
+
+### v2.3 (January 2026) - DYNAMIC MEMORY
+- ✅ **Dynamic Memory**: Replaced Bump Allocator with **Free List Allocator**.
+- ✅ **`os_free` Support**: Added support for freeing and coalescing memory blocks.
+- ✅ **Verification**: Added `malloc`/`free` stress tests improving Heap/Stack stability.
 
 ### v2.2 (January 2026) - FIXED & OPTIMIZED
 - ✅ **Fixed Critical Bug**: Stack initialization order (PCH/PCL swap) preventing crashes.

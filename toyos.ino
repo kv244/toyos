@@ -1,7 +1,7 @@
 #include "toyos.h"
 #include <Arduino.h>
 
-static uint8_t mem_pool[600];
+static uint8_t mem_pool[1024] __attribute__((aligned(2)));
 
 Mutex led_mutex;
 Mutex serial_mutex;
@@ -21,16 +21,23 @@ Semaphore led_sem;
 void task_producer(void) {
   int counter = 0;
 
-  /* TEST: Allocate memory for a status string ONCE */
-  char *status_buf = (char *)os_malloc(32);
-  if (status_buf) {
-    strcpy(status_buf, "Malloc Test: OK");
-    Serial.println(status_buf);
-  } else {
-    Serial.println(F("Malloc Test: FAILED"));
-  }
-
   while (1) {
+    /* TEST: Malloc/Free Stress Test - Allocate 32 bytes */
+    char *dynamic_buf = (char *)os_malloc(32);
+    if (dynamic_buf) {
+      strcpy(dynamic_buf, "Malloc: OK");
+      // Prevent compiler optimization by reading it back
+      if (dynamic_buf[0] != 'M')
+        Serial.println(F("Error"));
+
+      /* Valid allocation - now free it */
+      os_free(dynamic_buf);
+    } else {
+      /* Leak detection! */
+      Serial.println(F("Malloc: FAILED (Leak?)"));
+    }
+
+    /* Send counter value as a pointer (cast) - USING FAST PATH */
     os_mq_send_fast(sensor_mq, (void *)(uintptr_t)counter);
 
     /* TEST: Mutex for Serial & GetTick */
@@ -39,6 +46,10 @@ void task_producer(void) {
     Serial.print(counter);
     Serial.print(F(" @ Tick: "));
     Serial.println(os_get_tick());
+
+    if (!dynamic_buf)
+      Serial.println(F("STATUS: LEAKING MEMORY!"));
+
     os_mutex_unlock(&serial_mutex);
 
     counter++;
@@ -129,18 +140,34 @@ void setup() {
 
   /* Initialize OS and primitives */
   os_init(mem_pool, sizeof(mem_pool));
+  Serial.println(F("OS Init: OK"));
+
   os_mutex_init(&led_mutex);
   os_mutex_init(&serial_mutex);
   os_sem_init(&led_sem, 0); /* Init semaphore with 0 count (locked) */
+
   sensor_mq = os_mq_create(5);
+  if (sensor_mq == NULL) {
+    Serial.println(F("MQ Create: FAILED"));
+    while (1)
+      ;
+  }
+  Serial.println(F("MQ Create: OK"));
 
   /* Create tasks */
-  os_create_task(10, task_producer, 10, 100);
-  os_create_task(2, task_consumer_1, 5, 100);
-  os_create_task(3, task_consumer_2, 5, 100);
+  os_create_task(10, task_producer, 10, 256);
+  Serial.println(F("Task Prod: OK"));
+
+  os_create_task(2, task_consumer_1, 5, 128);
+  Serial.println(F("Task Cons1: OK"));
+
+  os_create_task(3, task_consumer_2, 5, 128);
+  Serial.println(F("Task Cons2: OK"));
+
   os_create_task(1, task_led_a, 1, 80);
   os_create_task(1, task_led_b, 1, 80);
   os_create_task(0, task_idle, 0, 64);
+  Serial.println(F("All Tasks: OK"));
 
   Serial.println(F("Starting Pre-emptive Scheduler..."));
   Serial.flush();
