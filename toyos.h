@@ -14,7 +14,7 @@
  * - Optimized context switching in assembly
  *
  * Author: [Your Name]
- * Version: 2.3
+ * Version: 2.4
  * Date: January 2026
  */
 

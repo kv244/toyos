@@ -276,6 +276,10 @@ static void heap_rebuild(void) {
 void os_timer_init(void) {
   cli(); /* Disable interrupts */
 
+  /* Configure Pin 13 (PB5) as output for OS activity heartbeat */
+  DDRB |= (1 << 5);
+  PORTB &= ~(1 << 5);
+
   /* Timer1 CTC mode, prescaler 64 */
   TCCR1A = 0;
   TCCR1B = (1 << WGM12) | TIMER1_PRESCALER_64;
@@ -484,6 +488,9 @@ void os_create_task(uint8_t id, void (*task_func)(void), uint8_t priority,
 
 /* Priority-Based Scheduler - FIXED: Skip blocked tasks */
 void os_scheduler(void) {
+  /* Activity Heartbeat: Toggle Pin 13 on every scheduling decision */
+  PINB |= (1 << 5);
+
   /* Put current task back in the ready heap ONLY if it's ready/running */
   if (kernel.current_node && (kernel.current_task->state == TASK_RUNNING ||
                               kernel.current_task->state == TASK_READY)) {
