@@ -326,7 +326,7 @@ Then enable it in your sketch:
 ### EEPROM Full
 - **Error:** `KV_ERR_FULL` when writing
   - **Fix:** Call `kv_clear()` to reset the database
-  - **Note:** The log-structured design appends all writes; compaction is not implemented
+  - **Note:** The log-structured design appends all writes; use `kv_compact()` to reclaim space.
 
 ---
 

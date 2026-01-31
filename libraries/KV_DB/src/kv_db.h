@@ -9,45 +9,53 @@
 extern "C" {
 #endif
 
+#include "kv_hal.h"
+
 #define KV_MAX_KEY_LEN 24
 #define KV_MAX_VAL_LEN 1024
-#define KV_EEPROM_SIZE 1024
 
-// Maximum number of keys (adjustable based on memory constraints)
+#ifdef KV_HAL_ARM
+#define KV_MAX_KEYS 64
+#define KV_EEPROM_SIZE 8192 // R4 Data Flash is 8KB
+#else
 #define KV_MAX_KEYS 18
+#define KV_EEPROM_SIZE 1024 // R3 EEPROM is 1KB
+#endif
 
 // EEPROM layout offsets
 #define KV_HEADER_OFFSET 0
 #define KV_INDEX_OFFSET 4
-#define KV_RECORDS_OFFSET 40
+#define KV_RECORDS_OFFSET                                                      \
+  132 // Increased to accommodate more keys on ARM (4 + 64*2)
 
 /**
  * EEPROM Header (4 bytes)
  * Stored at offset 0
  */
-typedef struct {
+typedef struct KV_ALIGN {
   uint16_t magic;   // 0x4B56 ('KV')
   uint8_t count;    // Number of keys in index
   uint8_t reserved; // Reserved for future use
-} __attribute__((packed)) KVHeader;
+} KV_PACKED KVHeader;
 
 /**
  * Index entry stored in EEPROM.
  * The index is a sorted array of EEPROM addresses.
  */
-typedef struct {
+typedef struct KV_ALIGN {
   uint16_t addr; // EEPROM address of the KV record
-} __attribute__((packed)) IndexEntry;
+} KV_PACKED IndexEntry;
 
 /**
  * KV Record header stored in EEPROM.
  * Followed by key data and value data.
  */
-typedef struct {
+typedef struct KV_ALIGN {
   uint8_t key_len;  // Length of key string (not including null)
   uint16_t val_len; // Length of value
   uint8_t flags;    // bit 0: is_free
-} __attribute__((packed)) KVRecord;
+  uint32_t crc;     // Hardware CRC32 for ARM, XOR sum for AVR
+} KV_PACKED KVRecord;
 
 #define KV_MAGIC 0x4B56
 #define KV_FLAG_FREE 0x01

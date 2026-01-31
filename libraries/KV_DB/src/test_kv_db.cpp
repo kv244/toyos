@@ -197,6 +197,32 @@ void test_concurrency(void) {
   }
 }
 
+/**
+ * Test compaction functionality.
+ */
+void test_compaction(void) {
+  kv_clear();
+
+  // Create gaps by updating and deleting
+  kv_write("k1", "v1", 2);
+  kv_write("k2", "v2", 2);
+  kv_write("k1", "v1_updated", 10); // Orphaning old k1
+  kv_delete("k2");                  // Orphaning k2
+
+  int16_t reclaimed = kv_compact();
+
+  char buffer[16];
+  uint16_t len;
+  if (reclaimed > 0 &&
+      kv_read("k1", buffer, sizeof(buffer), &len) == KV_SUCCESS &&
+      strncmp(buffer, "v1_updated", 10) == 0 &&
+      kv_read("k2", buffer, sizeof(buffer), &len) == KV_ERR_NOT_FOUND) {
+    test_log("Compaction", true);
+  } else {
+    test_log("Compaction", false);
+  }
+}
+
 extern "C" void run_all_tests(void) {
   os_mutex_lock(&serial_mutex);
   Serial.println(F("--- Starting DB Test Suite ---"));
@@ -206,6 +232,7 @@ extern "C" void run_all_tests(void) {
   test_persistence();
   test_edge_cases();
   test_eeprom_full();
+  test_compaction();
   test_concurrency();
 
   os_mutex_lock(&serial_mutex);

@@ -5,7 +5,21 @@
 #include <string.h>
 
 // Global state
-static Mutex kv_mutex;
+static kv_lock_t kv_lock;
+
+#ifdef KV_HAL_ARM
+/* SRAM Shadow Index (Hash Table) for O(1) Lookups on R4 */
+#define KV_HASH_SIZE 32
+static uint16_t shadow_index[KV_HASH_SIZE];
+
+static uint8_t kv_hash(const char *key) {
+  uint32_t h = 2166136261U;
+  while (*key) {
+    h = (h ^ (uint8_t)*key++) * 16777619U;
+  }
+  return (uint8_t)(h % KV_HASH_SIZE);
+}
+#endif
 
 typedef struct {
   uint8_t count;                   // Current number of keys
@@ -143,7 +157,8 @@ static void write_index_to_eeprom(void) {
  * Loads the index from EEPROM or initializes a new one.
  */
 kv_result_t kv_init(void) {
-  os_mutex_init(&kv_mutex);
+  kv_hal_lock_init(&kv_lock);
+  kv_hal_crc_init();
 
   /* Initialize storage driver if not set */
   if (storage_get_capacity() == 0) {
@@ -212,6 +227,17 @@ kv_result_t kv_init(void) {
     write_index_to_eeprom();
   }
 
+#ifdef KV_HAL_ARM
+  /* Populate shadow index */
+  for (int i = 0; i < KV_HASH_SIZE; i++)
+    shadow_index[i] = 0xFFFF;
+  for (uint8_t i = 0; i < index_cache->count; i++) {
+    char key[KV_MAX_KEY_LEN + 1];
+    read_key_from_record(index_cache->entries[i].addr, key);
+    shadow_index[kv_hash(key)] = index_cache->entries[i].addr;
+  }
+#endif
+
   return KV_SUCCESS;
 }
 
@@ -229,12 +255,12 @@ kv_result_t kv_write(const char *key, const char *value, uint16_t val_len) {
   if (val_len > KV_MAX_VAL_LEN)
     return KV_ERR_VAL_TOO_LONG;
 
-  os_mutex_lock(&kv_mutex);
+  kv_hal_lock(&kv_lock);
 
   // Check if space is available for new record
   uint16_t record_size = sizeof(KVRecord) + key_len + val_len;
   if (index_cache->next_free_addr + record_size > KV_EEPROM_SIZE) {
-    os_mutex_unlock(&kv_mutex);
+    kv_hal_unlock(&kv_lock);
     return KV_ERR_FULL;
   }
 
@@ -256,10 +282,15 @@ kv_result_t kv_write(const char *key, const char *value, uint16_t val_len) {
   header.key_len = key_len;
   header.val_len = val_len;
   header.flags = 0;
+  header.crc = kv_hal_crc32(key, key_len); // Basic CRC for now
 
   storage_write(addr, &header, sizeof(KVRecord));
   storage_write(addr + sizeof(KVRecord), key, key_len);
   storage_write(addr + sizeof(KVRecord) + key_len, value, val_len);
+
+#ifdef KV_HAL_ARM
+  shadow_index[kv_hash(key)] = addr;
+#endif
 
   // Update index
   if (is_update) {
@@ -268,7 +299,7 @@ kv_result_t kv_write(const char *key, const char *value, uint16_t val_len) {
   } else {
     // Insert new entry
     if (index_cache->count >= KV_MAX_KEYS) {
-      os_mutex_unlock(&kv_mutex);
+      kv_hal_unlock(&kv_lock);
       return KV_ERR_FULL;
     }
 
@@ -282,7 +313,7 @@ kv_result_t kv_write(const char *key, const char *value, uint16_t val_len) {
   // Persist index to EEPROM
   write_index_to_eeprom();
 
-  os_mutex_unlock(&kv_mutex);
+  kv_hal_unlock(&kv_lock);
   return KV_SUCCESS;
 }
 
@@ -294,18 +325,34 @@ kv_result_t kv_read(const char *key, char *buffer, uint16_t max_len,
   if (key == NULL || buffer == NULL)
     return KV_ERR_EEPROM;
 
-  os_mutex_lock(&kv_mutex);
+  kv_hal_lock(&kv_lock);
 
-  // Binary search for key
-  int16_t idx = index_search(key);
+  uint16_t addr = 0xFFFF;
 
-  if (idx < 0) {
-    os_mutex_unlock(&kv_mutex);
-    return KV_ERR_NOT_FOUND;
+#ifdef KV_HAL_ARM
+  /* O(1) Lookup via Shadow Index */
+  addr = shadow_index[kv_hash(key)];
+  if (addr != 0xFFFF) {
+    /* Verify it's really our key */
+    char check_key[KV_MAX_KEY_LEN + 1];
+    read_key_from_record(addr, check_key);
+    if (strcmp(key, check_key) != 0)
+      addr = 0xFFFF; // Collision or wrong key
+  }
+#endif
+
+  if (addr == 0xFFFF) {
+    // Binary search for key
+    int16_t idx = index_search(key);
+
+    if (idx < 0) {
+      kv_hal_unlock(&kv_lock);
+      return KV_ERR_NOT_FOUND;
+    }
+    addr = index_cache->entries[idx].addr;
   }
 
   // Read record
-  uint16_t addr = index_cache->entries[idx].addr;
   KVRecord header;
   storage_read(addr, &header, sizeof(KVRecord));
 
@@ -314,10 +361,16 @@ kv_result_t kv_read(const char *key, char *buffer, uint16_t max_len,
   uint16_t val_offset = addr + sizeof(KVRecord) + header.key_len;
   storage_read(val_offset, buffer, read_len);
 
+  /* Verify integrity */
+  if (header.crc != kv_hal_crc32(key, header.key_len)) {
+    kv_hal_unlock(&kv_lock);
+    return KV_ERR_EEPROM; // Data corrupted
+  }
+
   if (actual_len)
     *actual_len = header.val_len;
 
-  os_mutex_unlock(&kv_mutex);
+  kv_hal_unlock(&kv_lock);
   return KV_SUCCESS;
 }
 
@@ -328,14 +381,18 @@ kv_result_t kv_delete(const char *key) {
   if (key == NULL)
     return KV_ERR_EEPROM;
 
-  os_mutex_lock(&kv_mutex);
+  kv_hal_lock(&kv_lock);
 
   int16_t idx = index_search(key);
 
   if (idx < 0) {
-    os_mutex_unlock(&kv_mutex);
+    kv_hal_unlock(&kv_lock);
     return KV_ERR_NOT_FOUND;
   }
+
+#ifdef KV_HAL_ARM
+  shadow_index[kv_hash(key)] = 0xFFFF;
+#endif
 
   // Remove from index (don't reclaim EEPROM space)
   index_remove(idx);
@@ -343,7 +400,7 @@ kv_result_t kv_delete(const char *key) {
   // Persist index
   write_index_to_eeprom();
 
-  os_mutex_unlock(&kv_mutex);
+  kv_hal_unlock(&kv_lock);
   return KV_SUCCESS;
 }
 
@@ -352,7 +409,7 @@ kv_result_t kv_delete(const char *key) {
  * Copies all live entries to fresh EEPROM space.
  */
 int16_t kv_compact(void) {
-  os_mutex_lock(&kv_mutex);
+  kv_hal_lock(&kv_lock);
 
   uint16_t old_next_free = index_cache->next_free_addr;
   uint16_t write_addr = KV_RECORDS_OFFSET;
@@ -371,10 +428,10 @@ int16_t kv_compact(void) {
     // Calculate record size
     uint16_t record_size = sizeof(KVRecord) + header.key_len + header.val_len;
 
-    // Check if we have space (should always succeed for compaction)
+    // If we have space (should always succeed for compaction)
     if (write_addr + record_size > KV_EEPROM_SIZE) {
       // This shouldn't happen - the data should always fit
-      os_mutex_unlock(&kv_mutex);
+      kv_hal_unlock(&kv_lock);
       return KV_ERR_FULL;
     }
 
@@ -425,10 +482,21 @@ int16_t kv_compact(void) {
   // Persist updated index to EEPROM
   write_index_to_eeprom();
 
+#ifdef KV_HAL_ARM
+  /* Rebuild shadow index after compaction */
+  for (int i = 0; i < KV_HASH_SIZE; i++)
+    shadow_index[i] = 0xFFFF;
+  for (uint8_t i = 0; i < index_cache->count; i++) {
+    char key[KV_MAX_KEY_LEN + 1];
+    read_key_from_record(index_cache->entries[i].addr, key);
+    shadow_index[kv_hash(key)] = index_cache->entries[i].addr;
+  }
+#endif
+
   // Calculate bytes reclaimed
   int16_t reclaimed = old_next_free - write_addr;
 
-  os_mutex_unlock(&kv_mutex);
+  kv_hal_unlock(&kv_lock);
   return reclaimed;
 }
 
@@ -436,15 +504,20 @@ int16_t kv_compact(void) {
  * Clear the entire database.
  */
 kv_result_t kv_clear(void) {
-  os_mutex_lock(&kv_mutex);
+  kv_hal_lock(&kv_lock);
 
   // Reset index
   index_cache->count = 0;
   index_cache->next_free_addr = KV_RECORDS_OFFSET;
 
+#ifdef KV_HAL_ARM
+  for (int i = 0; i < KV_HASH_SIZE; i++)
+    shadow_index[i] = 0xFFFF;
+#endif
+
   // Write empty header
   write_index_to_eeprom();
 
-  os_mutex_unlock(&kv_mutex);
+  kv_hal_unlock(&kv_lock);
   return KV_SUCCESS;
 }
