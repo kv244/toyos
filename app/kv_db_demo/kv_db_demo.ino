@@ -129,52 +129,48 @@ void process_command(char *cmd) {
 }
 
 void task_db_demo(void) {
-  /* Give idle task time to start and feed watchdog */
-  os_delay(100);
-
-  Serial.println(F("[DB] Task started"));
+  /* Immediate output to confirm task started */
+  Serial.println(F("TASK START"));
   Serial.flush();
 
-  /* Initialize storage driver */
-  Serial.println(F("[DB] Initializing storage driver..."));
-  Serial.flush();
-
+  /* Initialize storage driver (silently) */
 #ifdef __AVR__
   storage_set_driver(storage_get_avr_eeprom_driver());
 #else
   storage_set_driver(storage_get_arduino_eeprom_driver());
 #endif
 
+  Serial.println(F("STORAGE SET"));
+  Serial.flush();
+
   if (storage_init() != STORAGE_OK) {
-    Serial.println(F("[DB] Storage init failed!"));
+    Serial.println(F("STORAGE FAIL"));
     Serial.flush();
     while (1)
       os_delay(1000);
   }
 
-  Serial.println(F("[DB] Storage driver ready"));
+  Serial.println(F("STORAGE OK"));
   Serial.flush();
 
-  log_f(F("[DB] Initializing KV Database..."));
-  Serial.flush();
-
+  /* Initialize KV Database (silently) */
   kv_result_t init_result = kv_init();
 
-  Serial.print(F("[DB] Init result: "));
-  Serial.println(init_result);
+  Serial.println(F("KV INIT DONE"));
   Serial.flush();
 
   if (init_result != KV_SUCCESS) {
-    log_f(F("[DB] Error initializing database!"));
+    Serial.print(F("KV FAIL: "));
+    Serial.println(init_result);
     Serial.flush();
     while (1)
       os_delay(1000);
   }
 
-  log_f(F("[DB] CLI Ready."));
-  Serial.flush();
-  log_f(F("Commands: ADD K,V | UPDATE K,V | DELETE K | SHOW KEYS | CAPACITY"));
-  Serial.flush();
+  /* Now safe to print */
+  Serial.println(F("[DB] CLI Ready."));
+  Serial.println(
+      F("Commands: ADD K,V | UPDATE K,V | DELETE K | SHOW KEYS | CAPACITY"));
   Serial.print(F("> "));
   Serial.flush();
 
