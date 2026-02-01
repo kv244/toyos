@@ -25,6 +25,101 @@ void log_f(const __FlashStringHelper *msg) {
   os_mutex_unlock(&serial_mutex);
 }
 
+/* --- CLI Helpers --- */
+void show_keys_cb(const char *key, void *val, uint16_t len, void *ctx) {
+  os_mutex_lock(&serial_mutex);
+  Serial.print(F("  "));
+  Serial.print(key);
+  Serial.print(F(": "));
+  /* Value might not be null-terminated safe string, print char by char */
+  const char *v = (const char *)val;
+  for (uint16_t i = 0; i < len; i++) {
+    Serial.print(v[i]);
+  }
+  Serial.println();
+  os_mutex_unlock(&serial_mutex);
+}
+
+void process_command(char *cmd) {
+  /* Normalize command to uppercase for checking (simple approach) */
+  /* Actually, let's just check the prefix case-insensitively or strictly. User
+   * asked for ADD/DELETE caps in prompt. */
+
+  if (strncmp(cmd, "ADD ", 4) == 0 || strncmp(cmd, "UPDATE ", 7) == 0) {
+    char *args = strchr(cmd, ' ');
+    if (!args)
+      return;
+    args++; /* Skip space */
+
+    char *comma = strchr(args, ',');
+    if (!comma) {
+      log_f(F("Error: Use format 'KEY, VALUE'"));
+      return;
+    }
+
+    *comma = '\0'; /* Null-terminate key */
+    char *val = comma + 1;
+    while (*val == ' ')
+      val++; /* Skip leading spaces in value */
+
+    if (kv_write(args, val, strlen(val)) == KV_SUCCESS) {
+      log_f(F("OK"));
+    } else {
+      log_f(F("Error: Write failed (Full/Too Long?)"));
+    }
+
+  } else if (strncmp(cmd, "DELETE ", 7) == 0) {
+    char *key = cmd + 7;
+    while (*key == ' ')
+      key++;
+
+    if (kv_delete(key) == KV_SUCCESS) {
+      log_f(F("Deleted"));
+    } else {
+      log_f(F("Error: Key not found"));
+    }
+
+  } else if (strncmp(cmd, "SHOW KEYS", 9) == 0) {
+    log_f(F("--- Keys ---"));
+    kv_iterate(NULL, show_keys_cb, NULL);
+    log_f(F("------------"));
+
+  } else if (strncmp(cmd, "CAPACITY", 8) == 0) {
+    /* Estimate Capacity for Key(20) + Value(100) */
+    /* Overhead: Magic(1)+KeyLen(1)+ValLen(2)+CRC(4) = 8 bytes */
+    /* Record Size = 8 + 20 + 100 = 128 bytes */
+    /* Total Capacity = (EEPROM - SectorHeaders)/128 */
+    /* Constraint: KV_MAX_KEYS (RAM Index) */
+
+    uint32_t total_storage = KV_EEPROM_SIZE;
+    uint32_t sector_header_overhead =
+        (KV_EEPROM_SIZE / KV_SECTOR_SIZE) * sizeof(SectorHeader);
+    uint32_t usable_bytes = total_storage - sector_header_overhead;
+
+    uint16_t key_len = 20;
+    uint16_t val_len = 100;
+    uint16_t rec_size = sizeof(KVRecord) + key_len + val_len;
+
+    uint32_t storage_max = usable_bytes / rec_size;
+    uint32_t ram_max = KV_MAX_KEYS;
+
+    uint32_t actual_max = (storage_max < ram_max) ? storage_max : ram_max;
+
+    os_mutex_lock(&serial_mutex);
+    Serial.print(F("Platform Capacity Estimate (K=20, V=100):\n"));
+    Serial.print(F("  Storage Limit: "));
+    Serial.println(storage_max);
+    Serial.print(F("  RAM Limit:     "));
+    Serial.println(ram_max);
+    Serial.print(F("  Actual Max:    "));
+    Serial.println(actual_max);
+    os_mutex_unlock(&serial_mutex);
+
+  } else if (strlen(cmd) > 0) {
+    log_f(F("Unknown command. Try: ADD K,V | DELETE K | SHOW KEYS | CAPACITY"));
+  }
+}
+
 void task_db_demo(void) {
   log_f(F("[DB] Initializing KV Database..."));
 
@@ -35,80 +130,35 @@ void task_db_demo(void) {
   }
 
   run_all_tests();
-  log_f(F("[DB] Starting KV Database Demo..."));
+  log_f(F("[DB] Tests Complete. Entering Interactive Mode."));
+  log_f(F("Commands: ADD K,V | UPDATE K,V | DELETE K | SHOW KEYS | CAPACITY"));
+  Serial.print(F("> "));
 
-  // 1. Write a key
-  log_f(F("[DB] Writing key 'username' with value 'julia'..."));
-  if (kv_write("username", "julia", 5) == KV_SUCCESS) {
-    log_f(F("[DB] Write successful."));
-  }
-
-  // 2. Read the key back
-  char buffer[32];
-  uint16_t actual_len;
-  log_f(F("[DB] Reading key 'username'..."));
-  if (kv_read("username", buffer, sizeof(buffer), &actual_len) == KV_SUCCESS) {
-    buffer[actual_len] = '\0';
-    os_mutex_lock(&serial_mutex);
-    Serial.print(F("[DB] Got value: "));
-    Serial.println(buffer);
-    os_mutex_unlock(&serial_mutex);
-  }
-
-  // 3. Update the key
-  log_f(F("[DB] Updating 'username' to 'antigravity'..."));
-  kv_write("username", "antigravity", 11);
-
-  if (kv_read("username", buffer, sizeof(buffer), &actual_len) == KV_SUCCESS) {
-    buffer[actual_len] = '\0';
-    os_mutex_lock(&serial_mutex);
-    Serial.print(F("[DB] New value: "));
-    Serial.println(buffer);
-    os_mutex_unlock(&serial_mutex);
-  }
-
-  // 4. Delete the key
-  log_f(F("[DB] Deleting 'username'..."));
-  kv_delete("username");
-
-  if (kv_read("username", buffer, sizeof(buffer), &actual_len) ==
-      KV_ERR_NOT_FOUND) {
-    log_f(F("[DB] Read failed as expected: Key not found."));
-  }
-
-  // 5. Demonstrate compaction
-  log_f(F("[DB] Running compaction to reclaim EEPROM space..."));
-  int16_t reclaimed = kv_compact();
-  if (reclaimed >= 0) {
-    os_mutex_lock(&serial_mutex);
-    Serial.print(F("[DB] Compaction successful. Reclaimed "));
-    Serial.print(reclaimed);
-    Serial.println(F(" bytes."));
-    os_mutex_unlock(&serial_mutex);
-  } else {
-    log_f(F("[DB] Compaction failed!"));
-  }
-
-  log_f(F("[DB] Demo finished."));
+  static char line_buf[64];
+  static uint8_t line_pos = 0;
 
   while (1) {
-    os_delay(1000);
+    if (Serial.available()) {
+      char c = Serial.read();
+      /* Echo character */
+      Serial.write(c);
+
+      if (c == '\n' || c == '\r') {
+        Serial.println(); /* Newline for visual */
+        if (line_pos > 0) {
+          line_buf[line_pos] = '\0';
+          process_command(line_buf);
+          line_pos = 0;
+        }
+        Serial.print(F("> "));
+      } else if (line_pos < sizeof(line_buf) - 1) {
+        if (c >= 32 && c <= 126) { /* printable only */
+          line_buf[line_pos++] = c;
+        }
+      }
+    }
+    os_delay(20); /* Yield to other tasks */
   }
-}
-
-void task_security_violation(void) {
-  os_delay(2000);
-#ifdef __arm__
-  log_f(F("[SEC] MPU Test: Attempting to write to protected kernel memory..."));
-  /* Try to write to the beginning of SRAM (Region 0 - Kernel) */
-  volatile uint32_t *kernel_mem = (volatile uint32_t *)0x20000000;
-  *kernel_mem = 0xBAD0CAFE;
-
-  /* If we reach here, MPU failed! */
-  log_f(F("[SEC] ERROR: MPU failed to block kernel write!"));
-#endif
-  while (1)
-    os_delay(1000);
 }
 
 void task_idle(void) {
@@ -143,7 +193,7 @@ void setup() {
   /* Print ToyOS Platform Info */
   os_print_info();
 
-  Serial.println(F("\n--- ToyOS KV Database Demo ---"));
+  Serial.println(F("\n--- ToyOS KV Database Console ---"));
 
   /* Initialize memory pool for stack allocation */
   os_init(mem_pool, sizeof(mem_pool));
@@ -154,10 +204,12 @@ void setup() {
   /* Note: watchdog is now handled by port layer */
 
   /* Create tasks */
-  os_create_task(1, task_db_demo, 1,
-                 350); /* ID 1, DB Task, Prio 1, Stack 350 */
+  os_create_task(
+      1, task_db_demo, 1,
+      400); /* ID 1, DB Task, Prio 1, Stack 400 (increased for CLI) */
   os_create_task(2, task_idle, 0, 100);
-  os_create_task(3, task_security_violation, 2, 128);
+  /* os_create_task(3, task_security_violation, 2, 128); // Disabled for CLI
+   * mode */
 
   /* Start the RTOS (never returns) */
   os_start();
