@@ -98,9 +98,10 @@ static inline void kv_hal_crc_init(void) {
   RA4M1_CRCCR = 0x83;
 }
 
-static inline uint32_t kv_hal_crc32(const void *data, uint16_t len) {
+static inline uint32_t kv_hal_crc32(const void *data, uint16_t len,
+                                    uint32_t seed) {
   const uint8_t *p = (const uint8_t *)data;
-  RA4M1_CRCDOR = 0; // Reset result
+  RA4M1_CRCDOR = seed; // Seed the CRC result
   for (uint16_t i = 0; i < len; i++) {
     RA4M1_CRCDIR = p[i];
   }
@@ -108,9 +109,10 @@ static inline uint32_t kv_hal_crc32(const void *data, uint16_t len) {
 }
 #else
 static inline void kv_hal_crc_init(void) {}
-static inline uint32_t kv_hal_crc32(const void *data, uint16_t len) {
+static inline uint32_t kv_hal_crc32(const void *data, uint16_t len,
+                                    uint32_t seed) {
   /* Simple software XOR sum as fallback for AVR */
-  uint32_t crc = 0;
+  uint32_t crc = seed;
   const uint8_t *p = (const uint8_t *)data;
   for (uint16_t i = 0; i < len; i++) {
     crc ^= p[i];

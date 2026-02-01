@@ -91,11 +91,42 @@ void storage_set_driver(const storage_driver_t *driver);
 /**
  * Helper wrappers for ease of use
  */
-storage_result_t storage_init(void);
-storage_result_t storage_read(uint32_t addr, void *buf, size_t len);
-storage_result_t storage_write(uint32_t addr, const void *buf, size_t len);
-storage_result_t storage_erase(uint32_t addr, size_t len);
-uint32_t storage_get_capacity(void);
+static inline storage_result_t storage_init(void) {
+  if (current_storage_driver && current_storage_driver->init) {
+    return current_storage_driver->init();
+  }
+  return STORAGE_ERR_INIT_FAILED;
+}
+
+static inline storage_result_t storage_read(uint32_t addr, void *buf,
+                                            size_t len) {
+  if (current_storage_driver && current_storage_driver->read) {
+    return current_storage_driver->read(addr, buf, len);
+  }
+  return STORAGE_ERR_READ_FAILED;
+}
+
+static inline storage_result_t storage_write(uint32_t addr, const void *buf,
+                                             size_t len) {
+  if (current_storage_driver && current_storage_driver->write) {
+    return current_storage_driver->write(addr, buf, len);
+  }
+  return STORAGE_ERR_WRITE_FAILED;
+}
+
+static inline storage_result_t storage_erase(uint32_t addr, size_t len) {
+  if (current_storage_driver && current_storage_driver->erase) {
+    return current_storage_driver->erase(addr, len);
+  }
+  return STORAGE_OK;
+}
+
+static inline uint32_t storage_get_capacity(void) {
+  if (current_storage_driver && current_storage_driver->get_capacity) {
+    return current_storage_driver->get_capacity();
+  }
+  return 0;
+}
 
 #ifdef __cplusplus
 }

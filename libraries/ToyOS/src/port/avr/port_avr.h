@@ -131,16 +131,44 @@ void port_wdt_disable(void);
 /**
  * Platform information.
  */
-const char *port_get_platform_name(void);
-uint32_t port_get_cpu_freq(void);
+extern const char port_platform_name[];
+extern const char port_mcu_atmega328p[];
+extern const char port_mcu_atmega2560[];
+extern const char port_mcu_atmega32u4[];
+extern const char port_mcu_unknown[];
+
+static inline const char *port_get_platform_name(void) {
+  return port_platform_name;
+}
+
+static inline const char *port_get_mcu_name(void) {
+#if defined(__AVR_ATmega328P__)
+  return port_mcu_atmega328p;
+#elif defined(__AVR_ATmega2560__)
+  return port_mcu_atmega2560;
+#elif defined(__AVR_ATmega32U4__)
+  return port_mcu_atmega32u4;
+#else
+  return port_mcu_unknown;
+#endif
+}
+
+static inline uint32_t port_get_cpu_freq(void) {
+#ifdef F_CPU
+  return F_CPU;
+#else
+  return 16000000UL;
+#endif
+}
 
 /**
  * Platform memory characteristics.
  */
-uint32_t port_get_flash_size(void);
-uint32_t port_get_sram_size(void);
-uint32_t port_get_eeprom_size(void);
-const char *port_get_mcu_name(void);
+static inline uint32_t port_get_flash_size(void) { return PORT_AVR_FLASH_SIZE; }
+static inline uint32_t port_get_sram_size(void) { return PORT_AVR_SRAM_SIZE; }
+static inline uint32_t port_get_eeprom_size(void) {
+  return PORT_AVR_EEPROM_SIZE;
+}
 
 #ifdef __cplusplus
 }

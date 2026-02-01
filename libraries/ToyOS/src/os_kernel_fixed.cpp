@@ -77,7 +77,9 @@ static inline TaskNode *get_task_node(void) {
 }
 
 /* Heap Helpers from MISRA refactor */
-static void heap_push(TaskNode *node) {
+/* Heap Helpers from MISRA refactor */
+static inline void heap_push(TaskNode *node) __attribute__((always_inline));
+static inline void heap_push(TaskNode *node) {
   ASSERT(kernel.ready_heap.size < MAX_TASKS);
   if (kernel.ready_heap.size < MAX_TASKS) {
     uint8_t i = kernel.ready_heap.size++;
@@ -92,7 +94,8 @@ static void heap_push(TaskNode *node) {
   }
 }
 
-static TaskNode *heap_pop(void) {
+static inline TaskNode *heap_pop(void) __attribute__((always_inline));
+static inline TaskNode *heap_pop(void) {
   TaskNode *root = NULL;
   if (kernel.ready_heap.size > 0) {
     root = kernel.ready_heap.nodes[0];
@@ -697,22 +700,46 @@ void os_print(const char *msg) {
 #endif
 }
 
+void os_print_p(const char *msg_p) {
+#ifdef __AVR__
+  Serial.println((const __FlashStringHelper *)msg_p);
+#else
+  os_print(msg_p);
+#endif
+}
+
+#ifdef __AVR__
+#include <avr/pgmspace.h>
+#endif
+
 void os_print_info(void) {
 #ifdef ARDUINO
-  Serial.print(F("Tasks: "));
+  Serial.print(F("ToyOS v"));
+  Serial.println(F(TOYOS_VERSION_STRING));
+
+  char buffer[32];
+
+  Serial.print(F("Platform: "));
+#ifdef __AVR__
+  strcpy_P(buffer, port_get_platform_name());
+  Serial.println(buffer);
+#else
+  Serial.println(port_get_platform_name());
+#endif
+
+  Serial.print(F("MCU:      "));
+#ifdef __AVR__
+  strcpy_P(buffer, port_get_mcu_name());
+  Serial.println(buffer);
+#else
+  Serial.println(port_get_mcu_name());
+#endif
+
+  Serial.print(F("Tasks:    "));
   Serial.println(kernel.task_count);
-  Serial.print(F("Tick: "));
+  Serial.print(F("Tick:     "));
   Serial.println(kernel.system_tick);
 
-  /* Print task states? Not protected!
-     User task cannot access kernel.task_list.
-     But os_print_info IS a wrapper?
-     This accesses kernel.
-     So os_print_info MUST BE A SYSCALL or Internal!
-     Since Serial is used, easier to keep it internal or wrapper that calls
-     internal k_print_info.
-  */
-  // k_print_info required if MPU active.
-  // For now, assume privileged execution or MPU disabled for debugging.
+  Serial.println(F("-----------------------"));
 #endif
 }

@@ -261,50 +261,12 @@ void port_wdt_disable(void) { wdt_disable(); }
  * PLATFORM INFORMATION
  * ======================================================================== */
 
-/**
- * Get platform name string.
- */
-const char *port_get_platform_name(void) { return "AVR"; }
+#include <avr/pgmspace.h>
 
-/**
- * Get MCU name string.
- */
-const char *port_get_mcu_name(void) {
-#if defined(__AVR_ATmega328P__)
-  return "ATmega328P";
-#elif defined(__AVR_ATmega2560__)
-  return "ATmega2560";
-#elif defined(__AVR_ATmega32U4__)
-  return "ATmega32U4";
-#else
-  return "Unknown AVR";
-#endif
-}
-
-/**
- * Get CPU frequency.
- */
-uint32_t port_get_cpu_freq(void) {
-#ifdef F_CPU
-  return F_CPU;
-#else
-  return 16000000UL; /* Default 16MHz for Arduino UNO */
-#endif
-}
-
-/**
- * Get Flash memory size in bytes.
- */
-uint32_t port_get_flash_size(void) { return PORT_AVR_FLASH_SIZE; }
-
-/**
- * Get SRAM size in bytes.
- */
-uint32_t port_get_sram_size(void) { return PORT_AVR_SRAM_SIZE; }
-
-/**
- * Get EEPROM size in bytes.
- */
-uint32_t port_get_eeprom_size(void) { return PORT_AVR_EEPROM_SIZE; }
+const char port_platform_name[] PROGMEM = "AVR";
+const char port_mcu_atmega328p[] PROGMEM = "ATmega328P";
+const char port_mcu_atmega2560[] PROGMEM = "ATmega2560";
+const char port_mcu_atmega32u4[] PROGMEM = "ATmega32U4";
+const char port_mcu_unknown[] PROGMEM = "Unknown AVR";
 
 #endif /* __AVR__ */

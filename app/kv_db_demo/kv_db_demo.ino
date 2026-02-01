@@ -99,13 +99,13 @@ void task_db_demo(void) {
 void task_security_violation(void) {
   os_delay(2000);
 #ifdef __arm__
-  log_msg("[SEC] MPU Test: Attempting to write to protected kernel memory...");
+  log_f(F("[SEC] MPU Test: Attempting to write to protected kernel memory..."));
   /* Try to write to the beginning of SRAM (Region 0 - Kernel) */
   volatile uint32_t *kernel_mem = (volatile uint32_t *)0x20000000;
   *kernel_mem = 0xBAD0CAFE;
 
   /* If we reach here, MPU failed! */
-  log_msg("[SEC] ERROR: MPU failed to block kernel write!");
+  log_f(F("[SEC] ERROR: MPU failed to block kernel write!"));
 #endif
   while (1)
     os_delay(1000);

@@ -683,6 +683,12 @@ void os_print_info(void);
 void os_print(const char *msg);
 
 /**
+ * Print a string from Flash memory (PROGMEM) to the system console.
+ * Only applicable on AVR targets.
+ */
+void os_print_p(const char *msg_p);
+
+/**
  * Task scheduler - selects next task to run.
  *
  * Called from:

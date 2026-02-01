@@ -3,9 +3,10 @@
  */
 
 /* Guard entire file based on architecture to prevent compilation on AVR */
-#if defined(__ARM_ARCH_7M__) || defined(__ARM_ARCH_7EM__) ||                   \
-    defined(__ARM_ARCH_6M__) || defined(__ARM_ARCH_8M_MAIN__) ||               \
-    defined(__ARM_ARCH_8M_BASE__)
+#if defined(__arm__) || defined(__ARM_ARCH) ||                                 \
+    defined(ARDUINO_ARCH_RENESAS) || defined(__ARM_ARCH_7M__) ||               \
+    defined(__ARM_ARCH_7EM__) || defined(__ARM_ARCH_6M__) ||                   \
+    defined(__ARM_ARCH_8M_MAIN__) || defined(__ARM_ARCH_8M_BASE__)
 
 #include "port_arm.h"
 #include "../../port.h"
@@ -14,6 +15,18 @@
 
 #if TOYOS_USE_MPU
 #include "port_arm_mpu.h"
+#endif
+
+#ifdef ARDUINO
+#include <Arduino.h>
+#else
+#include <stdbool.h>
+#include <stdint.h>
+
+#endif
+
+#if defined(__arm__) || defined(__ARM_ARCH) || defined(ARDUINO_ARCH_RENESAS)
+#define PORT_PLATFORM_ARM_CORTEX_M 1
 #endif
 
 #ifdef PORT_PLATFORM_ARM_CORTEX_M
@@ -115,18 +128,6 @@ void port_context_switch(void) {
   /* Ensure memory ops completed */
   __asm volatile("dsb");
   __asm volatile("isb");
-}
-
-/* MPU Reconfiguration Helper (called from PendSV) */
-void port_mpu_reconfigure(TaskControlBlock *task) {
-#if TOYOS_USE_MPU
-  if (task) {
-    extern void port_mpu_configure_task_stack(void *stack_base,
-                                              uint32_t stack_size);
-    /* Stack base corresponds to the canary location (lowest address) */
-    port_mpu_configure_task_stack((void *)task->canary_ptr, task->stack_size);
-  }
-#endif
 }
 
 /**
@@ -277,11 +278,18 @@ void os_svc_dispatch_asm(uint32_t *stack_frame) {
 }
 
 /* Platform Info */
+/* Platform Info */
 const char *port_get_platform_name(void) { return "ARM Cortex-M4 (Renesas)"; }
 
 const char *port_get_mcu_name(void) { return "RA4M1"; }
 
-uint32_t port_get_cpu_freq(void) { return F_CPU; }
+uint32_t port_get_cpu_freq(void) {
+#ifdef F_CPU
+  return F_CPU;
+#else
+  return 48000000UL;
+#endif
+}
 
 uint32_t port_get_flash_size(void) { return 256 * 1024; /* 256KB */ }
 
