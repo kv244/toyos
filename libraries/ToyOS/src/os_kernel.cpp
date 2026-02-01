@@ -473,10 +473,15 @@ void k_mutex_lock(Mutex *m) {
 
 void k_mutex_unlock(Mutex *m) {
   port_enter_critical();
-  /* Restore Priority */
-  if (kernel.current_task == m->owner) {
-    kernel.current_task->priority = kernel.current_task->base_priority;
+
+  /* Enforce Ownership */
+  if (m->owner != kernel.current_task) {
+    port_exit_critical();
+    return;
   }
+
+  /* Restore Priority */
+  kernel.current_task->priority = kernel.current_task->base_priority;
 
   if (m->blocked_tasks.head) {
     TaskNode *waking = m->blocked_tasks.head;

@@ -392,6 +392,7 @@ kv_result_t kv_delete(const char *key) {
 kv_result_t kv_clear(void) {
   kv_hal_lock(&kv_db_lock);
 
+#ifndef __AVR__
   for (uint16_t s = 0; s < KV_NUM_SECTORS; s++) {
     if (storage_erase((uint32_t)s * KV_SECTOR_SIZE, KV_SECTOR_SIZE) !=
         STORAGE_OK) {
@@ -400,6 +401,7 @@ kv_result_t kv_clear(void) {
     }
     os_wdt_feed();
   }
+#endif
 
   current_seq = 1;
   SectorHeader head = {KV_SECTOR_MAGIC, current_seq};
@@ -434,7 +436,8 @@ int16_t kv_compact(void) {
   }
   memcpy(old_index, kv_index, sizeof(IndexEntry) * live_count);
 
-  /* Clear storage */
+  /* Clear storage (Skip on AVR: update handles erase/write) */
+#ifndef __AVR__
   for (uint16_t s = 0; s < KV_NUM_SECTORS; s++) {
     if (storage_erase((uint32_t)s * KV_SECTOR_SIZE, KV_SECTOR_SIZE) !=
         STORAGE_OK) {
@@ -444,6 +447,7 @@ int16_t kv_compact(void) {
     }
     os_wdt_feed();
   }
+#endif
 
   current_seq++;
   SectorHeader head = {KV_SECTOR_MAGIC, current_seq};
