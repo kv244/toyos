@@ -211,6 +211,7 @@ kv_result_t kv_init(void) {
                      sizeof(KVRecord)) != STORAGE_OK)
       break;
     offset += sizeof(KVRecord) + rec.key_len + rec.val_len;
+    os_wdt_feed();
   }
   current_write_offset = offset;
 
@@ -392,26 +393,27 @@ kv_result_t kv_clear(void) {
   kv_hal_lock(&kv_db_lock);
 
   for (uint16_t s = 0; s < KV_NUM_SECTORS; s++) {
+    if (storage_erase((uint32_t)s * KV_SECTOR_SIZE, KV_SECTOR_SIZE) !=
+        STORAGE_OK) {
+      kv_hal_unlock(&kv_db_lock);
+      return KV_ERR_EEPROM;
+    }
     os_wdt_feed();
+  }
+
+  current_seq = 1;
+  SectorHeader head = {KV_SECTOR_MAGIC, current_seq};
+  if (storage_write(0, &head, sizeof(SectorHeader)) != STORAGE_OK) {
     kv_hal_unlock(&kv_db_lock);
     return KV_ERR_EEPROM;
   }
-  os_wdt_feed();
-}
 
-current_seq = 1;
-SectorHeader head = {KV_SECTOR_MAGIC, current_seq};
-if (storage_write(0, &head, sizeof(SectorHeader)) != STORAGE_OK) {
+  current_write_sector = 0;
+  current_write_offset = KV_RECORDS_OFFSET;
+  kv_index_count = 0;
+
   kv_hal_unlock(&kv_db_lock);
-  return KV_ERR_EEPROM;
-}
-
-current_write_sector = 0;
-current_write_offset = KV_RECORDS_OFFSET;
-kv_index_count = 0;
-
-kv_hal_unlock(&kv_db_lock);
-return KV_SUCCESS;
+  return KV_SUCCESS;
 }
 
 /* --- API: Compact --- */
@@ -434,11 +436,13 @@ int16_t kv_compact(void) {
 
   /* Clear storage */
   for (uint16_t s = 0; s < KV_NUM_SECTORS; s++) {
-    if (storage_erase(s * KV_SECTOR_SIZE, KV_SECTOR_SIZE) != STORAGE_OK) {
+    if (storage_erase((uint32_t)s * KV_SECTOR_SIZE, KV_SECTOR_SIZE) !=
+        STORAGE_OK) {
       os_free(old_index);
       kv_hal_unlock(&kv_db_lock);
       return -1;
     }
+    os_wdt_feed();
   }
 
   current_seq++;

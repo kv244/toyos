@@ -26,9 +26,10 @@ The following bugs have been fixed in the codebase but need to be verified on ha
 - [x] **Watchdog Feed**: Implemented `os_wdt_feed()` calling `port_wdt_feed()`.
 - [x] **Atomic SP Update**: Fixed Timer1 ISR to update `SPH` then `SPL` for atomic stack pointer switching.
 - [x] **Bootloop Safeguard**: Added `wdt_disable()` to `setup()` in `kv_db_demo.ino`.
-- [x] **Ultra-Early WDT Kill**: Implemented `port_early_wdt_disable` in `.init3` section (runs before `main` and constructors) in `port_avr.c`.
+- [x] **Ultra-Early WDT Kill**: Implemented `early_wdt_disable` in `.init3` section (runs before `main` and constructors) in `port_avr.c`.
 - [x] **Internal Library Hardening**: Added `os_wdt_feed()` calls to long-running KV Database operations (`kv_init`, `kv_compact`, `kv_clear`).
     - *Rationale*: EEPROM writes on AVR take ~3.3ms/byte. A full compaction or scan of 1KB can exceed 1s, which could trigger a reset if the WDT is active.
+    - *Note*: Fixed logic bug in `kv_clear()` where it returned `KV_ERR_EEPROM` prematurely.
 
 ## 🧠 Diagnostic Note: The "Watchdog Bootloop" Theory
 The AVR Watchdog Timer (WDT) persists across resets. If a crash triggers a reset while the WDT is active, it defaults to a very short 15ms timeout on the next boot (the "Watchdog Bootloop of Death"). On Arduinos, if the bootloader or the application `setup()` takes longer than 15ms to run, the chip resets again before any upload can happen.

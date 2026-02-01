@@ -266,10 +266,7 @@ void port_wdt_disable(void) { wdt_disable(); }
  * after reset, before the main() function and before C global constructors.
  * This is the most robust way to prevent watchdog-induced boot loops on AVR.
  */
-void port_early_wdt_disable(void) __attribute__((naked))
-__attribute__((section(".init3")));
-void port_early_wdt_disable(void) {
-  MCUSR = 0;
+void __attribute__((naked, section(".init3"))) early_wdt_disable(void) {
   wdt_disable();
 }
 
