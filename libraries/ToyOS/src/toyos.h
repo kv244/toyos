@@ -51,7 +51,9 @@ extern "C" {
  * Include default configuration.
  * This provides #ifndef guards so user overrides take precedence.
  */
+#include "hal/storage_driver.h"
 #include "toyos_config.h"
+
 
 /* ========================================================================
  * CONFIGURATION CONSTANTS (from toyos_config.h)

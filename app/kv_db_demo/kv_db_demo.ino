@@ -5,10 +5,8 @@
 #endif
 
 /* Include OS and KV Database */
-#include <hal/storage_driver.h>
 #include <kv_db.h>
 #include <toyos.h>
-
 
 #ifdef __AVR__
 #include <avr/wdt.h> // For watchdog control
