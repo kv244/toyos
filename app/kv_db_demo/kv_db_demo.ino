@@ -11,8 +11,6 @@ static uint8_t mem_pool[896] __attribute__((aligned(2)));
 
 Mutex serial_mutex;
 
-extern "C" void run_all_tests(void);
-
 void log_msg(const char *msg) {
   os_mutex_lock(&serial_mutex);
   os_print(msg);
@@ -129,8 +127,7 @@ void task_db_demo(void) {
       os_delay(1000);
   }
 
-  run_all_tests();
-  log_f(F("[DB] Tests Complete. Entering Interactive Mode."));
+  log_f(F("[DB] CLI Ready."));
   log_f(F("Commands: ADD K,V | UPDATE K,V | DELETE K | SHOW KEYS | CAPACITY"));
   Serial.print(F("> "));
 
@@ -208,8 +205,6 @@ void setup() {
       1, task_db_demo, 1,
       400); /* ID 1, DB Task, Prio 1, Stack 400 (increased for CLI) */
   os_create_task(2, task_idle, 0, 100);
-  /* os_create_task(3, task_security_violation, 2, 128); // Disabled for CLI
-   * mode */
 
   /* Start the RTOS (never returns) */
   os_start();
