@@ -1,0 +1,53 @@
+name: Memory Analysis
+
+on: [push, pull_request]
+
+jobs:
+  analyze_ram:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Install Arduino CLI
+      uses: arduino/setup-arduino-cli@v1
+
+    - name: Install AVR Core
+      run: arduino-cli core install arduino:avr
+
+    - name: Compile and Generate Map File
+      run: |
+        mkdir -p build_output
+        arduino-cli compile --fqbn arduino:avr:uno \
+          --build-property "compiler.c.elf.extra_flags=-Wl,-Map=build_output/output.map" \
+          --output-dir build_output \
+          --libraries libraries \
+          app/kv_db_demo
+
+    - name: Locate Toolchain
+      id: toolchain
+      run: |
+        # Find where avr-gcc is installed
+        AVR_GCC_PATH=$(find /home/runner/.arduino15/packages/arduino/tools/avr-gcc -name avr-gcc | head -n 1)
+        TOOLCHAIN_DIR=$(dirname "$AVR_GCC_PATH")
+        echo "TOOLCHAIN_DIR=$TOOLCHAIN_DIR" >> $GITHUB_ENV
+        echo "Found toolchain at: $TOOLCHAIN_DIR"
+
+    - name: Run AVR Size
+      run: |
+        "$TOOLCHAIN_DIR/avr-size" -C --mcu=atmega328p build_output/kv_db_demo.ino.elf
+
+    - name: Top RAM Consumers (avr-nm)
+      run: |
+        echo "Symbol Analysis (Top 20 RAM Consumers):"
+        echo "SIZE TYPE NAME"
+        "$TOOLCHAIN_DIR/avr-nm" -C --size-sort -r -S -t d build_output/kv_db_demo.ino.elf | grep -E " [dDbB] " | head -n 20
+
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: memory-report
+        path: |
+          build_output/output.map
+          build_output/kv_db_demo.ino.elf

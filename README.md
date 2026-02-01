@@ -35,7 +35,7 @@ ToyOS is a lightweight, preemptive Real-Time Operating System (RTOS) designed fo
 - ✅ **Hierarchical Namespaces**: Support for structured keys (e.g., `config/net/ssid`) with **Prefix Iteration**.
 - ✅ **RAM-Based Indexing**: Fast O(log N) binary search for lookups and iterations.
 - ✅ **Platform-Agnostic Storage**: Auto-selects driver (AVR EEPROM / ARM Data Flash).
-- ✅ **Data Integrity**: Magic numbers and CRC placeholders for robustness.
+- ✅ **Data Integrity**: Magic numbers and CRC32 checksums (Key + Value) for robustness.
 - ✅ **Thread-Safe**: Fully protected by OS primitives.
 
 ### Security & Reliability
@@ -62,6 +62,30 @@ ToyOS is a lightweight, preemptive Real-Time Operating System (RTOS) designed fo
 ### Robustness
 - **Atomic Startup**: Prevents race conditions during initialization.
 - **Critical Fixes**: v2.2 resolves stack corruption (PCH/PCL swap) and startup races.
+
+---
+
+## 🛠️ Development Tools
+
+### Memory Analysis
+ToyOS includes tools to analyze memory usage and identify top RAM consumers.
+
+**Local Analysis:**
+Run the PowerShell script to compile and analyze RAM usage:
+```powershell
+.\analyze_memory.ps1
+```
+This script will:
+1. Compile the project (generating a map file)
+2. Report total Flash/SRAM usage (`avr-size`)
+3. List the top 20 global variables consuming RAM (`avr-nm`)
+
+**CI/CD Pipeline:**
+The project includes a GitHub Actions workflow (`.github/workflows/memory_analysis.yml`) that automatically:
+- Compiles the code on every push/PR
+- Analyzes memory usage
+- Uploads the map file and ELF as build artifacts
+- Logs the top RAM consumers directly in the workflow run summary
 
 ---
 
