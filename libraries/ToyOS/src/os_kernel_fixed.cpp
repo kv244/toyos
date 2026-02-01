@@ -477,13 +477,17 @@ void k_sem_post(Semaphore *s) {
   }
   port_exit_critical();
 }
+#if TOYOS_ENABLE_MESSAGE_QUEUES
 MessageQueue *k_mq_create(uint8_t c) { return NULL; }
 void k_mq_send(MessageQueue *q, void *m) {}
 void *k_mq_receive(MessageQueue *q) { return NULL; }
+#endif
+
 uint32_t k_get_time(void) { return kernel.system_tick; }
 
 /* --- SYSCALL DISPATCHER --- */
 
+#if TOYOS_USE_SVC
 extern "C" uint32_t os_kernel_syscall(uint8_t id, uint32_t a0, uint32_t a1,
                                       uint32_t a2, uint32_t a3) {
   uint32_t result = 0;
@@ -518,12 +522,24 @@ extern "C" uint32_t os_kernel_syscall(uint8_t id, uint32_t a0, uint32_t a1,
   case SVC_PRINT:
     Serial.println((const char *)a0);
     break;
+#if TOYOS_ENABLE_MESSAGE_QUEUES
+  case SVC_MQ_CREATE:
+    result = (uint32_t)k_mq_create((uint8_t)a0);
+    break;
+  case SVC_MQ_SEND:
+    k_mq_send((MessageQueue *)a0, (void *)a1);
+    break;
+  case SVC_MQ_RECEIVE:
+    result = (uint32_t)k_mq_receive((MessageQueue *)a0);
+    break;
+#endif
   default:
     /* Unknown syscall */
     break;
   }
   return result;
 }
+#endif
 
 /* --- PUBLIC API WRAPPERS --- */
 
@@ -541,10 +557,22 @@ void os_start(void) { k_start(); }
   register uint32_t r0 asm("r0") = (uint32_t)(a0);                             \
   __asm volatile("svc %1" : "+r"(r0) : "I"(id) : "memory");                    \
   return (ret_type)r0;
+#define SVC_2(id, a0, a1)                                                      \
+  register uint32_t r0 asm("r0") = (uint32_t)(a0);                             \
+  register uint32_t r1 asm("r1") = (uint32_t)(a1);                             \
+  __asm volatile("svc %2" : "+r"(r0), "+r"(r1) : "I"(id) : "memory");          \
+  return;
+#define SVC_2_RET(id, a0, a1, ret_type)                                        \
+  register uint32_t r0 asm("r0") = (uint32_t)(a0);                             \
+  register uint32_t r1 asm("r1") = (uint32_t)(a1);                             \
+  __asm volatile("svc %2" : "+r"(r0), "+r"(r1) : "I"(id) : "memory");          \
+  return (ret_type)r0;
 #else
-#define SVC_0(id)              /* No-op */
-#define SVC_1(id, a0)          /* No-op */
-#define SVC_1_RET(id, a0, ret) /* No-op */
+#define SVC_0(id)                  /* No-op */
+#define SVC_1(id, a0)              /* No-op */
+#define SVC_1_RET(id, a0, ret)     /* No-op */
+#define SVC_2(id, a0, a1)          /* No-op */
+#define SVC_2_RET(id, a0, a1, ret) /* No-op */
 #endif
 
 void os_yield(void) {
@@ -622,9 +650,29 @@ void os_mutex_unlock(Mutex *m) {
 void os_sem_init(Semaphore *s, uint8_t c) { k_sem_init(s, c); }
 void os_sem_wait(Semaphore *s) { k_sem_wait(s); }
 void os_sem_post(Semaphore *s) { k_sem_post(s); }
-MessageQueue *os_mq_create(uint8_t c) { return k_mq_create(c); }
-void os_mq_send(MessageQueue *q, void *m) { k_mq_send(q, m); }
-void *os_mq_receive(MessageQueue *q) { return k_mq_receive(q); }
+#if TOYOS_ENABLE_MESSAGE_QUEUES
+MessageQueue *os_mq_create(uint8_t c) {
+#if TOYOS_USE_SVC
+  SVC_1_RET(SVC_MQ_CREATE, c, MessageQueue *);
+#else
+  return k_mq_create(c);
+#endif
+}
+void os_mq_send(MessageQueue *q, void *m) {
+#if TOYOS_USE_SVC
+  SVC_2(SVC_MQ_SEND, q, m);
+#else
+  k_mq_send(q, m);
+#endif
+}
+void *os_mq_receive(MessageQueue *q) {
+#if TOYOS_USE_SVC
+  SVC_1_RET(SVC_MQ_RECEIVE, q, void *);
+#else
+  return k_mq_receive(q);
+#endif
+}
+#endif
 
 /* --- UTILITY FUNCTIONS --- */
 

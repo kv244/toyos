@@ -338,10 +338,14 @@
  * If disabled, message queue functions are not included,
  * saving flash memory.
  *
- * Default: 1 (enabled)
+ * Default: 1 on ARM, 0 on AVR (saves ~500 bytes Flash)
  */
 #ifndef TOYOS_ENABLE_MESSAGE_QUEUES
+#if defined(__arm__) || defined(__ARM_ARCH)
 #define TOYOS_ENABLE_MESSAGE_QUEUES 1
+#else
+#define TOYOS_ENABLE_MESSAGE_QUEUES 0
+#endif
 #endif
 
 /**
