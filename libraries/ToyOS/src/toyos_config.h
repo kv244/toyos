@@ -57,7 +57,7 @@
  * Default: 96 bytes
  */
 #ifndef TOYOS_DEFAULT_STACK_SIZE
-#define TOYOS_DEFAULT_STACK_SIZE 96
+#define TOYOS_DEFAULT_STACK_SIZE 192
 #endif
 
 /**
@@ -67,15 +67,12 @@
  * Must be at least large enough for:
  * - Stack canary (4 bytes)
  * - Initial context (35 bytes: 32 registers + SREG + 2-byte PC)
- * - Some working space (at least 9 bytes)
+ * - Working space for library calls (Serial, etc.)
  *
- * Recommended minimum: 48 bytes
- * Do not set below 48 unless you know what you're doing!
- *
- * Default: 48 bytes
+ * Default: 160 bytes
  */
 #ifndef TOYOS_MIN_STACK_SIZE
-#define TOYOS_MIN_STACK_SIZE 48
+#define TOYOS_MIN_STACK_SIZE 160
 #endif
 
 /* ========================================================================
@@ -138,7 +135,7 @@
  * Note: This is just a suggested default - define in your application!
  */
 #ifndef TOYOS_MEMORY_POOL_SIZE
-#define TOYOS_MEMORY_POOL_SIZE 512
+#define TOYOS_MEMORY_POOL_SIZE 1024
 #endif
 
 /**

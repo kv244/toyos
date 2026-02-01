@@ -46,6 +46,15 @@ extern void *os_current_task_ptr;
  */
 uint8_t *port_init_stack(uint8_t *stack_top, uint16_t stack_size,
                          void (*task_func)(void)) {
+  /* SP Bounds Validation (RAMSTART - RAMEND) */
+  uint16_t top_addr = (uint16_t)(uintptr_t)stack_top;
+  uint16_t bottom_addr = top_addr - stack_size;
+
+  if (top_addr > RAMEND || bottom_addr < RAMSTART) {
+    /* Critical failure: stack outside RAM */
+    return NULL;
+  }
+
   uint8_t *sp = stack_top - 1;
 
   /* Store return address (task function) */

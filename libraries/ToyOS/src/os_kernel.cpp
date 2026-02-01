@@ -239,6 +239,11 @@ void k_create_task(uint8_t id, void (*task_func)(void), uint8_t priority,
   new_node->task.stack_size = stack_size;
   new_node->task.canary_ptr = canary_ptr;
   new_node->task.stack_ptr = port_init_stack(stack_top, stack_size, task_func);
+  if (new_node->task.stack_ptr == NULL) {
+    k_free(stack_mem);
+    task_pool_index--;
+    return;
+  }
 
   port_enter_critical();
   heap_push(new_node);
