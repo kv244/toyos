@@ -1,17 +1,17 @@
 # ToyOS - Tiny Operating System for Arduino
 
-**Version 2.5.1 - MULTI-PLATFORM (AVR + ARM Cortex-M)**  
+**Version 2.5.2 - MULTI-PLATFORM (AVR + ARM Cortex-M)**  
 **Status:** ✅ Production Ready for Hobbyist/Education  
-**Last Updated:** January 31, 2026
+**Last Updated:** February 1, 2026
 
 ToyOS is a lightweight, preemptive Real-Time Operating System (RTOS) designed for embedded systems. It supports multiple architectures including **Arduino UNO (AVR)** and **Arduino UNO R4 (ARM Cortex-M4)** with a unified CPU abstraction layer for maximum performance. Features include priority-based multitasking, inter-process communication, efficient resource management, and a persistent key-value database.
 
-**Recent Improvements (v2.5.1):**
+**Recent Improvements (v2.5.2):**
+- ✅ **KV Database Stabilization** - Complete rewrite for LFS support and wear leveling
+- ✅ **Multi-Platform Build Verified** - 100% success on both AVR and ARM architectures
+- ✅ **RAM-Based Indexing** - Optimized lookups with O(1) performance on ARM
+- ✅ **Hierarchical Keys** - Supporting prefix-based iteration for structured paths
 - ✅ **ARM MPU Support** - Hardware-enforced task isolation and stack protection
-- ✅ **CPU Port Abstraction** - Unified inline primitives for zero-overhead cross-platform support
-- ✅ **Source Tree Cleanup** - Professional repository structure with comprehensive documentation
-- ✅ **Code Quality Enhancements** - Explicit error handling and symbolic constants
-- ✅ **Comprehensive Analysis** - Detailed codebase review with improvement roadmap
 
 ---
 

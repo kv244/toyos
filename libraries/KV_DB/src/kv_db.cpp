@@ -1,411 +1,450 @@
 #include "kv_db.h"
-#include "hal/storage_arduino_eeprom.h"
-#include "hal/storage_avr_eeprom.h"
 #include "hal/storage_driver.h"
-#include <stdlib.h>
+#include "kv_hal.h"
+#include <stdint.h>
 #include <string.h>
+#include <toyos.h>
 
-/* --- Configuration --- */
+/**
+ * ToyOS KV Database Implementation (LFS + Wear Leveling + ARM Cache)
+ */
 
+/* Internal Constants */
 #define KV_NUM_SECTORS (KV_EEPROM_SIZE / KV_SECTOR_SIZE)
-#define KV_TOMBSTONE_LEN 0xFFFF
+#define KV_INVALID_ADDR 0xFFFF
+#define KV_RECORDS_OFFSET sizeof(SectorHeader)
 
-/* --- Data Types --- */
+/* Static Variables */
+static IndexEntry kv_index[KV_MAX_KEYS];
+static uint16_t kv_index_count = 0;
+static kv_lock_t kv_db_lock;
+static bool kv_initialized = false;
 
-typedef struct {
-  uint32_t seq;
-  uint32_t start_addr;
-  bool valid;
-} SectorInfo;
+/* Active write pointer */
+static uint16_t current_write_sector = 0;
+static uint16_t current_write_offset = KV_RECORDS_OFFSET;
+static uint32_t current_seq = 0;
 
-typedef struct {
-  uint8_t count;
-  IndexEntry entries[KV_MAX_KEYS];
-  uint32_t head_addr;   // Current write position
-  uint32_t current_seq; // Sequence number of current sector
-} kv_index_t;
-
-/* --- Globals --- */
-
-static kv_lock_t kv_lock;
-static kv_index_t *index_cache = NULL;
-
-/* --- Helper Functions --- */
-
-static int compare_sectors(const void *a, const void *b) {
-  const SectorInfo *sa = (const SectorInfo *)a;
-  const SectorInfo *sb = (const SectorInfo *)b;
-  if (!sa->valid && !sb->valid)
-    return 0;
-  if (!sa->valid)
-    return 1; // Invalid goes to end
-  if (!sb->valid)
-    return -1;
-  if (sa->seq < sb->seq)
-    return -1;
-  if (sa->seq > sb->seq)
-    return 1;
-  return 0;
+/* --- Helper: Read Key from Storage --- */
+static void read_key_from_addr(uint16_t addr, char *key_buffer) {
+  KVRecord rec;
+  storage_read(addr, &rec, sizeof(KVRecord));
+  if (rec.magic == KV_RECORD_MAGIC && rec.key_len > 0) {
+    uint8_t len = (rec.key_len > KV_MAX_KEY_LEN) ? KV_MAX_KEY_LEN : rec.key_len;
+    storage_read(addr + sizeof(KVRecord), key_buffer, len);
+    key_buffer[len] = '\0';
+  } else {
+    key_buffer[0] = '\0';
+  }
 }
 
-static void read_key_from_flash(uint32_t addr, char *key_buf) {
-  KVRecord header;
-  storage_read(addr, &header, sizeof(KVRecord));
-  uint8_t len =
-      (header.key_len > KV_MAX_KEY_LEN) ? KV_MAX_KEY_LEN : header.key_len;
-  storage_read(addr + sizeof(KVRecord), key_buf, len);
-  key_buf[len] = '\0';
-}
-
-static int compare_keys_flash(const char *key1, uint32_t addr2) {
-  char key2[KV_MAX_KEY_LEN + 1];
-  read_key_from_flash(addr2, key2);
-  return strcmp(key1, key2);
-}
-
-static void get_key_entry(int idx, char *key_buf) {
-#ifdef KV_HAL_ARM
-  strcpy(key_buf, index_cache->entries[idx].cached_key);
-#else
-  read_key_from_flash(index_cache->entries[idx].addr, key_buf);
-#endif
-}
-
-static int compare_keys_entry(const char *key1, int idx) {
+/* --- Helper: Get Key for Index Entry --- */
+static const char *get_key_for_entry(const IndexEntry *entry, char *temp_buf) {
 #if defined(KV_HAL_ARM)
-  return strcmp(key1, index_cache->entries[idx].cached_key);
+  return entry->cached_key;
 #else
-  return compare_keys_flash(key1, index_cache->entries[idx].addr);
+  read_key_from_addr(entry->addr, temp_buf);
+  return temp_buf;
 #endif
 }
 
-/* Binary Search in RAM Index */
-static int16_t index_search(const char *key) {
-  int16_t left = 0;
-  int16_t right = index_cache->count - 1;
+/* --- Helper: Binary Search --- */
+static int16_t find_index(const char *key) {
+  int16_t low = 0, high = kv_index_count - 1;
+  char temp_key[KV_MAX_KEY_LEN + 1];
 
-  while (left <= right) {
-    int16_t mid = left + (right - left) / 2;
-    int cmp = compare_keys_entry(key, mid);
+  while (low <= high) {
+    int16_t mid = low + (high - low) / 2;
+    const char *mid_key = get_key_for_entry(&kv_index[mid], temp_key);
+    int cmp = strcmp(mid_key, key);
+
     if (cmp == 0)
       return mid;
     if (cmp < 0)
-      right = mid - 1;
+      low = mid + 1;
     else
-      left = mid + 1;
+      high = mid - 1;
   }
   return -1;
 }
 
-/* Insert/Update RAM Index */
-static void index_update(const char *key, uint32_t addr) {
-  int16_t pos = index_search(key);
+/* --- Helper: Find Insertion Point (for sorted order) --- */
+static uint16_t find_insertion_point(const char *key) {
+  uint16_t low = 0, high = kv_index_count;
+  char temp_key[KV_MAX_KEY_LEN + 1];
 
-  if (pos >= 0) {
-    /* Found - Update Address */
-    index_cache->entries[pos].addr = (uint16_t)addr;
-  } else {
-    /* Not Found - Insert sorted */
-    if (index_cache->count < KV_MAX_KEYS) {
-      /* Find insertion spot */
-      int i;
-      for (i = index_cache->count - 1; i >= 0; i--) {
-        if (compare_keys_entry(key, i) > 0)
-          break;
-        index_cache->entries[i + 1] = index_cache->entries[i];
-      }
-      index_cache->entries[i + 1].addr = (uint16_t)addr;
-#ifdef KV_HAL_ARM
-      strcpy(index_cache->entries[i + 1].cached_key, key);
-#endif
-      index_cache->count++;
-    }
+  while (low < high) {
+    uint16_t mid = low + (high - low) / 2;
+    const char *mid_key = get_key_for_entry(&kv_index[mid], temp_key);
+    if (strcmp(mid_key, key) < 0)
+      low = mid + 1;
+    else
+      high = mid;
   }
+  return low;
 }
 
-static void index_remove(const char *key) {
-  int16_t pos = index_search(key);
-  if (pos >= 0) {
-    for (int i = pos; i < index_cache->count - 1; i++) {
-      index_cache->entries[i] = index_cache->entries[i + 1];
-    }
-    index_cache->count--;
-  }
+/* --- Helper: Sector Formatting --- */
+static void format_sector(uint16_t sector) {
+  uint32_t addr = sector * KV_SECTOR_SIZE;
+  storage_erase(addr, KV_SECTOR_SIZE);
+
+  current_seq++;
+  SectorHeader head = {KV_SECTOR_MAGIC, current_seq};
+  storage_write(addr, &head, sizeof(SectorHeader));
 }
 
-static kv_result_t kv_format_sector(uint32_t sector_start, uint32_t seq) {
-  storage_erase(sector_start, KV_SECTOR_SIZE);
-  SectorHeader hdr;
-  hdr.magic = KV_SECTOR_MAGIC;
-  hdr.seq = seq;
-  return (kv_result_t)storage_write(sector_start, &hdr, sizeof(SectorHeader));
-}
-
-/* --- Core API --- */
-
+/* --- API: Initialize --- */
 kv_result_t kv_init(void) {
-  kv_result_t res = KV_SUCCESS;
-  kv_hal_lock_init(&kv_lock);
-  kv_hal_crc_init();
+  if (kv_initialized)
+    return KV_SUCCESS;
 
-  /* 1. Driver Init */
-  if (storage_get_capacity() == 0) {
-#ifdef __AVR__
-    storage_set_driver(storage_get_avr_eeprom_driver());
-#elif defined(ARDUINO_ARCH_RENESAS)
-    storage_set_driver(storage_get_arduino_eeprom_driver());
-#endif
-    storage_init();
-  }
+  kv_hal_lock_init(&kv_db_lock);
+  kv_hal_lock(&kv_db_lock);
 
-  /* 2. Cache Alloc check */
-  if (index_cache == NULL) {
-    index_cache = (kv_index_t *)os_malloc(sizeof(kv_index_t));
-    if (index_cache == NULL)
-      return KV_ERR_EEPROM;
-    memset(index_cache, 0, sizeof(kv_index_t));
-  }
-
-  /* 3. Scan Sectors */
-  SectorInfo sectors[KV_NUM_SECTORS];
+  kv_index_count = 0;
+  current_seq = 0;
+  uint16_t latest_sector = 0;
   uint32_t max_seq = 0;
 
-  for (int i = 0; i < KV_NUM_SECTORS; i++) {
-    sectors[i].start_addr = i * KV_SECTOR_SIZE;
-    SectorHeader hdr;
-    storage_read(sectors[i].start_addr, &hdr, sizeof(SectorHeader));
+  /* 1. Identify active sectors and build index */
+  for (uint16_t s = 0; s < KV_NUM_SECTORS; s++) {
+    SectorHeader head;
+    storage_read(s * KV_SECTOR_SIZE, &head, sizeof(SectorHeader));
 
-    if (hdr.magic == KV_SECTOR_MAGIC) {
-      sectors[i].seq = hdr.seq;
-      sectors[i].valid = true;
-      if (hdr.seq > max_seq)
-        max_seq = hdr.seq;
-    } else {
-      sectors[i].seq = 0;
-      sectors[i].valid = false;
-    }
-  }
-
-  /* 4. Format if fresh */
-  if (max_seq == 0) {
-    /* Initialize Sector 0 */
-    kv_format_sector(0, 1);
-    index_cache->current_seq = 1;
-    index_cache->head_addr = sizeof(SectorHeader);
-    index_cache->count = 0;
-    return KV_SUCCESS;
-  }
-
-  /* 5. Sort Sectors by Seq */
-  qsort(sectors, KV_NUM_SECTORS, sizeof(SectorInfo), compare_sectors);
-
-  /* 6. Scan Valid Sectors and Build Index */
-  for (int i = 0; i < KV_NUM_SECTORS; i++) {
-    if (!sectors[i].valid)
-      continue;
-
-    uint32_t addr = sectors[i].start_addr + sizeof(SectorHeader);
-    uint32_t limit = sectors[i].start_addr + KV_SECTOR_SIZE;
-
-    while (addr + sizeof(KVRecord) <= limit) {
-      KVRecord rec;
-      storage_read(addr, &rec, sizeof(KVRecord));
-
-      if (rec.magic != KV_RECORD_MAGIC)
-        break; // End of valid data
-
-      /* Calculate header+key+val checksum */
-      // Optimization: For strict safety we should verify CRC.
-      // Skipping for speed in this implementation, but recommend adding
-      // verification.
-
-      char key[KV_MAX_KEY_LEN + 1];
-      storage_read(addr + sizeof(KVRecord), key, rec.key_len);
-      key[rec.key_len] = '\0';
-
-      if (rec.val_len == KV_TOMBSTONE_LEN) {
-        index_remove(key);
-      } else {
-        index_update(key, addr);
+    if (head.magic == KV_SECTOR_MAGIC) {
+      if (head.seq > max_seq) {
+        max_seq = head.seq;
+        latest_sector = s;
       }
 
-      addr += sizeof(KVRecord) + rec.key_len + rec.val_len;
-    }
+      /* Scan sector for records */
+      uint16_t offset = KV_RECORDS_OFFSET;
+      while (offset < KV_SECTOR_SIZE - sizeof(KVRecord)) {
+        KVRecord rec;
+        storage_read(s * KV_SECTOR_SIZE + offset, &rec, sizeof(KVRecord));
 
-    /* Set Head to end of last active sector */
-    if (sectors[i].seq == max_seq) {
-      index_cache->head_addr = addr;
-      index_cache->current_seq = max_seq;
+        if (rec.magic != KV_RECORD_MAGIC) {
+          /* Check if end of data */
+          if (rec.magic == 0xFF)
+            break;
+          /* Corrupt record? skip one byte and try again */
+          offset++;
+          continue;
+        }
+
+        /* Found a potentially valid record */
+        char key[KV_MAX_KEY_LEN + 1];
+        uint16_t record_addr = s * KV_SECTOR_SIZE + offset;
+        read_key_from_addr(record_addr, key);
+
+        if (key[0] != '\0') {
+          /* Update index (LFS: latest record for a key is the truth) */
+          int16_t idx = find_index(key);
+          if (idx >= 0) {
+            /* Existing key - update address if this record is newer */
+            /* In a single linear scan, later records are always newer */
+            kv_index[idx].addr = record_addr;
+          } else if (kv_index_count < KV_MAX_KEYS) {
+            /* New key - insert in sorted order */
+            uint16_t ins = find_insertion_point(key);
+            for (uint16_t j = kv_index_count; j > ins; j--) {
+              kv_index[j] = kv_index[j - 1];
+            }
+            kv_index[ins].addr = record_addr;
+#if defined(KV_HAL_ARM)
+            strncpy(kv_index[ins].cached_key, key, KV_MAX_KEY_LEN);
+            kv_index[ins].cached_key[KV_MAX_KEY_LEN] = '\0';
+#endif
+            kv_index_count++;
+          }
+        }
+
+        /* Move to next record */
+        offset += sizeof(KVRecord) + rec.key_len + rec.val_len;
+      }
     }
   }
 
-  return res;
+  current_write_sector = latest_sector;
+  current_seq = max_seq;
+
+  /* 2. Find tail in latest sector */
+  uint16_t offset = KV_RECORDS_OFFSET;
+  while (offset < KV_SECTOR_SIZE - sizeof(KVRecord)) {
+    uint8_t magic;
+    storage_read(current_write_sector * KV_SECTOR_SIZE + offset, &magic, 1);
+    if (magic == 0xFF)
+      break;
+
+    KVRecord rec;
+    storage_read(current_write_sector * KV_SECTOR_SIZE + offset, &rec,
+                 sizeof(KVRecord));
+    offset += sizeof(KVRecord) + rec.key_len + rec.val_len;
+  }
+  current_write_offset = offset;
+
+  /* 3. Handle Fresh Start */
+  if (max_seq == 0) {
+    format_sector(0);
+    current_write_sector = 0;
+    current_write_offset = KV_RECORDS_OFFSET;
+  }
+
+  kv_initialized = true;
+  kv_hal_unlock(&kv_db_lock);
+  return KV_SUCCESS;
 }
 
+/* --- API: Write --- */
 kv_result_t kv_write(const char *key, const char *value, uint16_t val_len) {
-  kv_result_t res = KV_SUCCESS;
-  kv_hal_lock(&kv_lock);
+  if (!kv_initialized)
+    kv_init();
+  if (!key || !value)
+    return KV_ERR_PARAM;
 
   uint8_t key_len = strlen(key);
-  uint32_t total_size = sizeof(KVRecord) + key_len + val_len;
+  if (key_len > KV_MAX_KEY_LEN)
+    return KV_ERR_KEY_TOO_LONG;
+  if (val_len > KV_MAX_VAL_LEN)
+    return KV_ERR_VAL_TOO_LONG;
 
-  uint32_t current_sector_start =
-      (index_cache->head_addr / KV_SECTOR_SIZE) * KV_SECTOR_SIZE;
-  uint32_t sector_remaining =
-      (current_sector_start + KV_SECTOR_SIZE) - index_cache->head_addr;
+  kv_hal_lock(&kv_db_lock);
 
-  if (total_size > sector_remaining) {
-    /* Move to Next Sector */
-    uint32_t next_sector_idx =
-        ((index_cache->head_addr / KV_SECTOR_SIZE) + 1) % KV_NUM_SECTORS;
-    uint32_t next_sector_addr = next_sector_idx * KV_SECTOR_SIZE;
+  uint16_t rec_total = sizeof(KVRecord) + key_len + val_len;
 
-    /* Auto-Erase (Circular Buffer - overwrite old data) */
-    index_cache->current_seq++;
-    kv_format_sector(next_sector_addr, index_cache->current_seq);
+  /* Space Check & Wear Leveling */
+  if (current_write_offset + rec_total > KV_SECTOR_SIZE) {
+    current_write_sector = (current_write_sector + 1) % KV_NUM_SECTORS;
+    format_sector(current_write_sector);
+    current_write_offset = KV_RECORDS_OFFSET;
 
-    /* Check for Orphaned Index Entries (pointing to erased sector) */
-    /* This is critical: if index points to overwritten sector, remove entry */
-    for (int i = 0; i < index_cache->count;) {
-      uint32_t entry_addr = index_cache->entries[i].addr;
-      if (entry_addr >= next_sector_addr &&
-          entry_addr < (next_sector_addr + KV_SECTOR_SIZE)) {
-        /* Remove orphaned entry */
-        for (int k = i; k < index_cache->count - 1; k++) {
-          index_cache->entries[k] = index_cache->entries[k + 1];
-        }
-        index_cache->count--;
-      } else {
-        i++;
-      }
+    if (current_write_offset + rec_total > KV_SECTOR_SIZE) {
+      kv_hal_unlock(&kv_db_lock);
+      return KV_ERR_VAL_TOO_LONG; /* Should not happen with valid params */
     }
-
-    index_cache->head_addr = next_sector_addr + sizeof(SectorHeader);
   }
 
-  /* Write Record */
+  /* Prepare Record Header */
   KVRecord rec;
   rec.magic = KV_RECORD_MAGIC;
   rec.key_len = key_len;
   rec.val_len = val_len;
-  rec.crc = 0; // TODO calculate CRC
+  rec.crc = kv_hal_crc32(value, val_len);
 
-  storage_write(index_cache->head_addr, &rec, sizeof(KVRecord));
-  storage_write(index_cache->head_addr + sizeof(KVRecord), key, key_len);
-  if (val_len > 0 && val_len != KV_TOMBSTONE_LEN) {
-    storage_write(index_cache->head_addr + sizeof(KVRecord) + key_len, value,
-                  val_len);
-  }
+  uint32_t addr = current_write_sector * KV_SECTOR_SIZE + current_write_offset;
+
+  /* Commit to Storage */
+  storage_write(addr, &rec, sizeof(KVRecord));
+  storage_write(addr + sizeof(KVRecord), key, key_len);
+  storage_write(addr + sizeof(KVRecord) + key_len, value, val_len);
 
   /* Update Index */
-  if (val_len == KV_TOMBSTONE_LEN) {
-    index_remove(key);
-  } else {
-    index_update(key, index_cache->head_addr);
-  }
-
-  index_cache->head_addr += total_size;
-
-  kv_hal_unlock(&kv_lock);
-  return res;
-}
-
-kv_result_t kv_read(const char *key, char *buffer, uint16_t max_len,
-                    uint16_t *actual_len) {
-  kv_result_t res = KV_ERR_NOT_FOUND;
-  kv_hal_lock(&kv_lock);
-
-  int16_t idx = index_search(key);
+  int16_t idx = find_index(key);
   if (idx >= 0) {
-    uint32_t addr = index_cache->entries[idx].addr;
-    KVRecord rec;
-    storage_read(addr, &rec, sizeof(KVRecord));
-
-    if (actual_len)
-      *actual_len = rec.val_len;
-
-    uint16_t copy_len = (rec.val_len > max_len) ? max_len : rec.val_len;
-    storage_read(addr + sizeof(KVRecord) + rec.key_len, buffer, copy_len);
-    res = KV_SUCCESS;
+    kv_index[idx].addr = addr;
+  } else if (kv_index_count < KV_MAX_KEYS) {
+    uint16_t ins = find_insertion_point(key);
+    for (uint16_t j = kv_index_count; j > ins; j--) {
+      kv_index[j] = kv_index[j - 1];
+    }
+    kv_index[ins].addr = addr;
+#if defined(KV_HAL_ARM)
+    strncpy(kv_index[ins].cached_key, key, KV_MAX_KEY_LEN);
+    kv_index[ins].cached_key[KV_MAX_KEY_LEN] = '\0';
+#endif
+    kv_index_count++;
+  } else {
+    /* TODO: Automatic Compaction or Error */
+    kv_hal_unlock(&kv_db_lock);
+    return KV_ERR_FULL;
   }
 
-  kv_hal_unlock(&kv_lock);
-  return res;
-}
-
-kv_result_t kv_delete(const char *key) {
-  return kv_write(key, NULL, KV_TOMBSTONE_LEN);
-}
-
-int16_t kv_compact(void) {
-  /* Auto-compaction happens on sector boundary in kv_write */
-  return 0;
-}
-
-kv_result_t kv_clear(void) {
-  kv_hal_lock(&kv_lock);
-  /* Format all sectors */
-  for (int i = 0; i < KV_NUM_SECTORS; i++) {
-    storage_erase(i * KV_SECTOR_SIZE, KV_SECTOR_SIZE);
-  }
-  index_cache->count = 0;
-  kv_init(); /* Re-init */
-  kv_hal_unlock(&kv_lock);
+  current_write_offset += rec_total;
+  kv_hal_unlock(&kv_db_lock);
   return KV_SUCCESS;
 }
 
+/* --- API: Read --- */
+kv_result_t kv_read(const char *key, char *buffer, uint16_t max_len,
+                    uint16_t *actual_len) {
+  if (!kv_initialized)
+    kv_init();
+  if (!key || !buffer)
+    return KV_ERR_PARAM;
+
+  kv_hal_lock(&kv_db_lock);
+
+  int16_t idx = find_index(key);
+  if (idx < 0) {
+    kv_hal_unlock(&kv_db_lock);
+    return KV_ERR_NOT_FOUND;
+  }
+
+  uint32_t addr = kv_index[idx].addr;
+  KVRecord rec;
+  storage_read(addr, &rec, sizeof(KVRecord));
+
+  uint16_t to_copy = (rec.val_len > max_len) ? max_len : rec.val_len;
+  storage_read(addr + sizeof(KVRecord) + rec.key_len, buffer, to_copy);
+
+  if (actual_len)
+    *actual_len = rec.val_len;
+
+  kv_hal_unlock(&kv_db_lock);
+
+  /* Verify CRC */
+  if (kv_hal_crc32(buffer, to_copy) != rec.crc && to_copy == rec.val_len) {
+    /* Data corruption! */
+    return KV_ERR_EEPROM;
+  }
+
+  return KV_SUCCESS;
+}
+
+/* --- API: Delete --- */
+kv_result_t kv_delete(const char *key) {
+  if (!kv_initialized)
+    kv_init();
+  kv_hal_lock(&kv_db_lock);
+
+  int16_t idx = find_index(key);
+  if (idx < 0) {
+    kv_hal_unlock(&kv_db_lock);
+    return KV_ERR_NOT_FOUND;
+  }
+
+  /* Remove from index */
+  for (uint16_t i = idx; i < kv_index_count - 1; i++) {
+    kv_index[i] = kv_index[i + 1];
+  }
+  kv_index_count--;
+
+  kv_hal_unlock(&kv_db_lock);
+  return KV_SUCCESS;
+}
+
+/* --- API: Clear --- */
+kv_result_t kv_clear(void) {
+  kv_hal_lock(&kv_db_lock);
+
+  for (uint16_t s = 0; s < KV_NUM_SECTORS; s++) {
+    storage_erase(s * KV_SECTOR_SIZE, KV_SECTOR_SIZE);
+  }
+
+  current_seq = 1;
+  SectorHeader head = {KV_SECTOR_MAGIC, current_seq};
+  storage_write(0, &head, sizeof(SectorHeader));
+
+  current_write_sector = 0;
+  current_write_offset = KV_RECORDS_OFFSET;
+  kv_index_count = 0;
+
+  kv_hal_unlock(&kv_db_lock);
+  return KV_SUCCESS;
+}
+
+/* --- API: Compact --- */
+int16_t kv_compact(void) {
+  if (!kv_initialized)
+    kv_init();
+  kv_hal_lock(&kv_db_lock);
+
+  uint16_t live_count = kv_index_count;
+  IndexEntry *old_index =
+      (IndexEntry *)os_malloc(sizeof(IndexEntry) * live_count);
+  if (!old_index) {
+    kv_hal_unlock(&kv_db_lock);
+    return -1;
+  }
+  memcpy(old_index, kv_index, sizeof(IndexEntry) * live_count);
+
+  /* Clear storage */
+  for (uint16_t s = 0; s < KV_NUM_SECTORS; s++) {
+    storage_erase(s * KV_SECTOR_SIZE, KV_SECTOR_SIZE);
+  }
+
+  current_seq++;
+  SectorHeader head = {KV_SECTOR_MAGIC, current_seq};
+  storage_write(0, &head, sizeof(SectorHeader));
+
+  current_write_sector = 0;
+  current_write_offset = KV_RECORDS_OFFSET;
+  uint16_t reclaimed = 0;
+
+  /* Re-write all live records */
+  for (uint16_t i = 0; i < live_count; i++) {
+    KVRecord rec;
+    storage_read(old_index[i].addr, &rec, sizeof(KVRecord));
+
+    char key[KV_MAX_KEY_LEN + 1];
+    uint8_t k_len = rec.key_len;
+    storage_read(old_index[i].addr + sizeof(KVRecord), key, k_len);
+
+    char *val = (char *)os_malloc(rec.val_len);
+    if (!val)
+      continue;
+    storage_read(old_index[i].addr + sizeof(KVRecord) + k_len, val,
+                 rec.val_len);
+
+    uint32_t new_addr =
+        current_write_sector * KV_SECTOR_SIZE + current_write_offset;
+
+    storage_write(new_addr, &rec, sizeof(KVRecord));
+    storage_write(new_addr + sizeof(KVRecord), key, k_len);
+    storage_write(new_addr + sizeof(KVRecord) + k_len, val, rec.val_len);
+
+    kv_index[i].addr = new_addr;
+    current_write_offset += sizeof(KVRecord) + k_len + rec.val_len;
+
+    os_free(val);
+  }
+
+  os_free(old_index);
+  kv_hal_unlock(&kv_db_lock);
+  return 1; /* Success */
+}
+
+/* --- API: Iterate --- */
 kv_result_t kv_iterate(const char *prefix, kv_iter_cb_t cb, void *ctx) {
+  if (!kv_initialized)
+    kv_init();
   if (!cb)
     return KV_ERR_PARAM;
 
-  kv_hal_lock(&kv_lock);
+  kv_hal_lock(&kv_db_lock);
 
-  /* Binary search for start (Lower Bound) */
-  int16_t left = 0;
-  int16_t right = index_cache->count;
+  size_t p_len = prefix ? strlen(prefix) : 0;
+  char temp_key[KV_MAX_KEY_LEN + 1];
+  char temp_val[64]; /* buffer for small values */
 
-  while (left < right) {
-    int16_t mid = left + (right - left) / 2;
-    if (compare_keys_entry(prefix, mid) > 0) {
-      left = mid + 1;
-    } else {
-      right = mid;
+  for (uint16_t i = 0; i < kv_index_count; i++) {
+    const char *key = get_key_for_entry(&kv_index[i], temp_key);
+
+    if (p_len == 0 || strncmp(key, prefix, p_len) == 0) {
+      /* Read value and callback */
+      uint32_t addr = kv_index[i].addr;
+      KVRecord rec;
+      storage_read(addr, &rec, sizeof(KVRecord));
+
+      void *v_ptr;
+      bool allocated = false;
+      if (rec.val_len <= sizeof(temp_val)) {
+        v_ptr = temp_val;
+      } else {
+        v_ptr = os_malloc(rec.val_len);
+        allocated = true;
+      }
+
+      if (v_ptr) {
+        storage_read(addr + sizeof(KVRecord) + rec.key_len, v_ptr, rec.val_len);
+        cb(key, v_ptr, rec.val_len, ctx);
+        if (allocated)
+          os_free(v_ptr);
+      }
     }
   }
 
-  size_t prefix_len = strlen(prefix);
-
-  for (int i = left; i < index_cache->count; i++) {
-    char key_buf[KV_MAX_KEY_LEN + 1];
-    get_key_entry(i, key_buf);
-
-    if (strncmp(key_buf, prefix, prefix_len) != 0) {
-      break;
-    }
-
-    uint32_t addr = index_cache->entries[i].addr;
-    KVRecord rec;
-    storage_read(addr, &rec, sizeof(KVRecord));
-
-    uint8_t stack_buf[32];
-    void *val_buf = NULL;
-    bool using_stack = (rec.val_len < sizeof(stack_buf));
-
-    if (using_stack) {
-      val_buf = stack_buf;
-    } else {
-      val_buf = os_malloc(rec.val_len + 1);
-    }
-
-    if (val_buf) {
-      storage_read(addr + sizeof(KVRecord) + rec.key_len, val_buf, rec.val_len);
-      ((char *)val_buf)[rec.val_len] = '\0';
-      cb(key_buf, val_buf, rec.val_len, ctx);
-      if (!using_stack)
-        os_free(val_buf);
-    }
-  }
-
-  kv_hal_unlock(&kv_lock);
+  kv_hal_unlock(&kv_db_lock);
   return KV_SUCCESS;
 }
