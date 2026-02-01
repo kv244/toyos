@@ -125,17 +125,20 @@ bool port_mpu_configure_region(const mpu_region_config_t *config) {
 
 /**
  * Configure kernel data region (privileged RW, user no access)
+ * Protects the OS Kernel structures from unprivileged tasks.
  */
 static void mpu_configure_kernel_region(void) {
-  // For now, use a fixed kernel region
-  // In a full implementation, this would use linker symbols
-  uint32_t kernel_base = 0x20000000; // Start of SRAM
-  uint32_t kernel_size = 4096;       // 4KB for kernel data
+  /* RA4M1 SRAM starts at 0x20000000.
+   * We protect the first 4KB which typically contains the vector table (if in
+   * RAM), kernel structures, and privileged data.
+   */
+  uint32_t kernel_base = 0x20000000;
+  uint32_t kernel_size = 4096; // 4KB
 
   mpu_region_config_t config = {
       .base_addr = kernel_base,
       .size_bits = port_mpu_calculate_size_bits(kernel_size),
-      .access_perm = MPU_AP_PRIV_RW, // Privileged RW, User no access
+      .access_perm = MPU_AP_PRIV_RW, // Privileged RW, User NO ACCESS
       .region_num = MPU_REGION_KERNEL,
       .executable = false,
       .cacheable = true,
@@ -147,41 +150,46 @@ static void mpu_configure_kernel_region(void) {
 
 /**
  * Configure heap region (shared, full access)
+ * This is where task-shared data and message buffers reside.
  */
 static void mpu_configure_heap_region(void) {
-  // Heap region - shared memory for all tasks
-  uint32_t heap_base = 0x20001000; // After kernel region
-  uint32_t heap_size = 8192;       // 8KB heap
+  /* Typically the heap follows the kernel data.
+   * For the R4, we'll allow tasks to access the remainder of the 32KB SRAM
+   * minus the 4KB kernel header.
+   */
+  uint32_t heap_base = 0x20001000;
+  uint32_t heap_size = 28672; // 28KB (Remainder of 32KB)
 
-  mpu_region_config_t config = {.base_addr = heap_base,
-                                .size_bits =
-                                    port_mpu_calculate_size_bits(heap_size),
-                                .access_perm = MPU_AP_FULL_RW, // Full access
-                                .region_num = MPU_REGION_HEAP,
-                                .executable = false,
-                                .cacheable = true,
-                                .bufferable = true,
-                                .shareable = true};
+  mpu_region_config_t config = {
+      .base_addr = heap_base,
+      .size_bits = port_mpu_calculate_size_bits(heap_size),
+      .access_perm = MPU_AP_FULL_RW, // Full access (Shared Heap)
+      .region_num = MPU_REGION_HEAP,
+      .executable = false,
+      .cacheable = true,
+      .bufferable = true,
+      .shareable = true};
 
   port_mpu_configure_region(&config);
 }
 
 /**
  * Configure peripheral region (device memory)
+ * Restricted to Privileged access to prevent unprivileged tasks from bypassing
+ * security by manipulating hardware directly.
  */
 static void mpu_configure_peripheral_region(void) {
-  // Peripheral region - device registers
-  uint32_t periph_base = 0x40000000; // Peripheral base (typical for Cortex-M)
-  uint32_t periph_size = 512 * 1024; // 512KB peripheral space
+  uint32_t periph_base = 0x40000000;
+  uint32_t periph_size = 1048576; // 1MB for all peripheral blocks
 
   mpu_region_config_t config = {
       .base_addr = periph_base,
       .size_bits = port_mpu_calculate_size_bits(periph_size),
-      .access_perm = MPU_AP_FULL_RW, // Full access
+      .access_perm = MPU_AP_PRIV_RW, // PRIVILEGED ONLY
       .region_num = MPU_REGION_PERIPHERAL,
       .executable = false,
-      .cacheable = false,  // Device memory - no cache
-      .bufferable = false, // Device memory - no buffer
+      .cacheable = false,
+      .bufferable = false,
       .shareable = true};
 
   port_mpu_configure_region(&config);

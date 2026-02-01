@@ -13,34 +13,40 @@ Mutex serial_mutex;
 
 extern "C" void run_all_tests(void);
 
-void log_msg(const __FlashStringHelper *msg) {
+void log_msg(const char *msg) {
+  os_mutex_lock(&serial_mutex);
+  os_print(msg);
+  os_mutex_unlock(&serial_mutex);
+}
+
+void log_f(const __FlashStringHelper *msg) {
   os_mutex_lock(&serial_mutex);
   Serial.println(msg);
   os_mutex_unlock(&serial_mutex);
 }
 
 void task_db_demo(void) {
-  log_msg(F("[DB] Initializing KV Database..."));
+  log_f(F("[DB] Initializing KV Database..."));
 
   if (kv_init() != KV_SUCCESS) {
-    log_msg(F("[DB] Error initializing database!"));
+    log_f(F("[DB] Error initializing database!"));
     while (1)
       os_delay(1000);
   }
 
   run_all_tests();
-  log_msg(F("[DB] Starting KV Database Demo..."));
+  log_f(F("[DB] Starting KV Database Demo..."));
 
   // 1. Write a key
-  log_msg(F("[DB] Writing key 'username' with value 'julia'..."));
+  log_f(F("[DB] Writing key 'username' with value 'julia'..."));
   if (kv_write("username", "julia", 5) == KV_SUCCESS) {
-    log_msg(F("[DB] Write successful."));
+    log_f(F("[DB] Write successful."));
   }
 
   // 2. Read the key back
   char buffer[32];
   uint16_t actual_len;
-  log_msg(F("[DB] Reading key 'username'..."));
+  log_f(F("[DB] Reading key 'username'..."));
   if (kv_read("username", buffer, sizeof(buffer), &actual_len) == KV_SUCCESS) {
     buffer[actual_len] = '\0';
     os_mutex_lock(&serial_mutex);
@@ -50,7 +56,7 @@ void task_db_demo(void) {
   }
 
   // 3. Update the key
-  log_msg(F("[DB] Updating 'username' to 'antigravity'..."));
+  log_f(F("[DB] Updating 'username' to 'antigravity'..."));
   kv_write("username", "antigravity", 11);
 
   if (kv_read("username", buffer, sizeof(buffer), &actual_len) == KV_SUCCESS) {
@@ -62,16 +68,16 @@ void task_db_demo(void) {
   }
 
   // 4. Delete the key
-  log_msg(F("[DB] Deleting 'username'..."));
+  log_f(F("[DB] Deleting 'username'..."));
   kv_delete("username");
 
   if (kv_read("username", buffer, sizeof(buffer), &actual_len) ==
       KV_ERR_NOT_FOUND) {
-    log_msg(F("[DB] Read failed as expected: Key not found."));
+    log_f(F("[DB] Read failed as expected: Key not found."));
   }
 
   // 5. Demonstrate compaction
-  log_msg(F("[DB] Running compaction to reclaim EEPROM space..."));
+  log_f(F("[DB] Running compaction to reclaim EEPROM space..."));
   int16_t reclaimed = kv_compact();
   if (reclaimed >= 0) {
     os_mutex_lock(&serial_mutex);
@@ -80,14 +86,29 @@ void task_db_demo(void) {
     Serial.println(F(" bytes."));
     os_mutex_unlock(&serial_mutex);
   } else {
-    log_msg(F("[DB] Compaction failed!"));
+    log_f(F("[DB] Compaction failed!"));
   }
 
-  log_msg(F("[DB] Demo finished."));
+  log_f(F("[DB] Demo finished."));
 
   while (1) {
     os_delay(1000);
   }
+}
+
+void task_security_violation(void) {
+  os_delay(2000);
+#ifdef __arm__
+  log_msg("[SEC] MPU Test: Attempting to write to protected kernel memory...");
+  /* Try to write to the beginning of SRAM (Region 0 - Kernel) */
+  volatile uint32_t *kernel_mem = (volatile uint32_t *)0x20000000;
+  *kernel_mem = 0xBAD0CAFE;
+
+  /* If we reach here, MPU failed! */
+  log_msg("[SEC] ERROR: MPU failed to block kernel write!");
+#endif
+  while (1)
+    os_delay(1000);
 }
 
 void task_idle(void) {
@@ -97,6 +118,21 @@ void task_idle(void) {
     os_enter_idle();
   }
 }
+
+/**
+ * Print detailed system information (Version, Platform, Memory).
+ * This function uses Serial port and blocks until output is done.
+ * Best called during setup() before os_start().
+ */
+void os_print_info(void);
+
+/**
+ * Print a string to the system console.
+ * When MPU is enabled, this uses an SVC call to safely access the Serial
+ * hardware.
+ * @param msg Null-terminated string to print
+ */
+void os_print(const char *msg);
 
 void setup() {
   /* Initialize serial for debug output */
@@ -119,8 +155,9 @@ void setup() {
 
   /* Create tasks */
   os_create_task(1, task_db_demo, 1,
-                 350);                  /* ID 1, DB Task, Prio 1, Stack 350 */
-  os_create_task(2, task_idle, 0, 100); /* ID 2, Idle Task, Prio 0, Stack 100 */
+                 350); /* ID 1, DB Task, Prio 1, Stack 350 */
+  os_create_task(2, task_idle, 0, 100);
+  os_create_task(3, task_security_violation, 2, 128);
 
   /* Start the RTOS (never returns) */
   os_start();

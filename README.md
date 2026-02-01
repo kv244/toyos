@@ -7,11 +7,12 @@
 ToyOS is a lightweight, preemptive Real-Time Operating System (RTOS) designed for embedded systems. It supports multiple architectures including **Arduino UNO (AVR)** and **Arduino UNO R4 (ARM Cortex-M4)** with a unified CPU abstraction layer for maximum performance. Features include priority-based multitasking, inter-process communication, efficient resource management, and a persistent key-value database.
 
 **Recent Improvements (v2.5.2):**
+- ✅ **Hardened MPU Sandbox** - Restricted peripheral access and kernel protection (ARM)
+- ✅ **Secure Serial Gateway** - Use `os_print()` for thread-safe, MPU-aware logging
 - ✅ **KV Database Stabilization** - Complete rewrite for LFS support and wear leveling
 - ✅ **Multi-Platform Build Verified** - 100% success on both AVR and ARM architectures
 - ✅ **RAM-Based Indexing** - Optimized lookups with O(1) performance on ARM
 - ✅ **Hierarchical Keys** - Supporting prefix-based iteration for structured paths
-- ✅ **ARM MPU Support** - Hardware-enforced task isolation and stack protection
 
 ---
 
@@ -41,7 +42,9 @@ ToyOS is a lightweight, preemptive Real-Time Operating System (RTOS) designed fo
 - ✅ **True MPU Isolation (ARM)**:
   - **Privilege Separation**: Kernel runs Privileged, Tasks run Unprivileged.
   - **System Call Interface (SVC)**: User tasks access kernel services via secure gates.
+  - **Peripheral Lockdown**: Denies tasks direct access to hardware registers (UART/GPIO/Timers).
   - **Memory Protection**: Hardware-enforced barriers for Kernel Code/Data and Task Stacks.
+  - **Secure Serial Gateway**: `os_print()` provides mediated access to debug output.
 - ✅ **Stack Protection**: Guard regions and Canary detection.
 - ✅ **Watchdog Timer**: Hardware recovery.
 
@@ -382,6 +385,12 @@ Then enable it in your sketch:
 ---
 
 ## 📝 Version History
+
+### v2.5.2 (February 2026) - SECURITY HARDENING
+- ✅ **Hardened Sandbox**: Denied unprivileged access to all peripheral blocks on ARM.
+- ✅ **Secure Serial**: Added `os_print()` syscall for mediated Serial access.
+- ✅ **KV DB Stabilization**: Full rewrite of `kv_db.cpp` with LFS and wear leveling.
+- ✅ **Security Demo**: Added intentional violation test to verify MPU enforcement.
 
 ### v2.5.1 (January 2026) - PORTABILITY REFINED
 - ✅ **O(1) ARM Performance**: Added Shadow Index (Hash Table) for constant-time lookups on R4.

@@ -678,6 +678,11 @@ void os_start(void);
 void os_print_info(void);
 
 /**
+ * Print a string to the system console via SVC (if MPU enabled).
+ */
+void os_print(const char *msg);
+
+/**
  * Task scheduler - selects next task to run.
  *
  * Called from:

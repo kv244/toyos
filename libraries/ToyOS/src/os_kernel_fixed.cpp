@@ -31,7 +31,8 @@ enum {
   SVC_MQ_CREATE,
   SVC_MQ_SEND,
   SVC_MQ_RECEIVE,
-  SVC_GET_TIME
+  SVC_GET_TIME,
+  SVC_PRINT
 };
 
 /* Dynamic Task Pool */
@@ -68,9 +69,11 @@ uint32_t k_get_time(void);
 /* Inline helper */
 static inline TaskNode *get_task_node(void) __attribute__((always_inline));
 static inline TaskNode *get_task_node(void) {
-  if (task_pool_index >= MAX_TASKS)
-    return NULL;
-  return &task_pool[task_pool_index++];
+  TaskNode *node = NULL;
+  if (task_pool_index < MAX_TASKS) {
+    node = &task_pool[task_pool_index++];
+  }
+  return node;
 }
 
 /* Heap Helpers from MISRA refactor */
@@ -90,29 +93,33 @@ static void heap_push(TaskNode *node) {
 }
 
 static TaskNode *heap_pop(void) {
-  if (kernel.ready_heap.size == 0)
-    return NULL;
-  TaskNode *root = kernel.ready_heap.nodes[0];
-  kernel.ready_heap.size--;
+  TaskNode *root = NULL;
   if (kernel.ready_heap.size > 0) {
-    TaskNode *last = kernel.ready_heap.nodes[kernel.ready_heap.size];
-    uint8_t i = 0;
-    while ((2 * i + 1) < kernel.ready_heap.size) {
-      uint8_t left = 2 * i + 1;
-      uint8_t right = 2 * i + 2;
-      uint8_t largest = left;
-      if (right < kernel.ready_heap.size &&
-          kernel.ready_heap.nodes[right]->task.priority >
-              kernel.ready_heap.nodes[left]->task.priority) {
-        largest = right;
+    root = kernel.ready_heap.nodes[0];
+    kernel.ready_heap.size--;
+    if (kernel.ready_heap.size > 0) {
+      TaskNode *last = kernel.ready_heap.nodes[kernel.ready_heap.size];
+      uint8_t i = 0;
+      bool done = false;
+      while (!done && (2 * i + 1) < kernel.ready_heap.size) {
+        uint8_t left = 2 * i + 1;
+        uint8_t right = 2 * i + 2;
+        uint8_t largest = left;
+        if (right < kernel.ready_heap.size &&
+            kernel.ready_heap.nodes[right]->task.priority >
+                kernel.ready_heap.nodes[left]->task.priority) {
+          largest = right;
+        }
+        if (last->task.priority >=
+            kernel.ready_heap.nodes[largest]->task.priority) {
+          done = true;
+        } else {
+          kernel.ready_heap.nodes[i] = kernel.ready_heap.nodes[largest];
+          i = largest;
+        }
       }
-      if (last->task.priority >=
-          kernel.ready_heap.nodes[largest]->task.priority)
-        break;
-      kernel.ready_heap.nodes[i] = kernel.ready_heap.nodes[largest];
-      i = largest;
+      kernel.ready_heap.nodes[i] = last;
     }
-    kernel.ready_heap.nodes[i] = last;
   }
   return root;
 }
@@ -159,57 +166,61 @@ void k_start(void) {
 void k_create_task(uint8_t id, void (*task_func)(void), uint8_t priority,
                    uint16_t stack_size) {
   TaskNode *new_node = get_task_node();
-  if (!new_node)
-    return;
+  if (new_node != NULL) {
+    void *stack_mem = k_malloc(stack_size);
+    if (stack_mem != NULL) {
+      uint32_t *canary_ptr = (uint32_t *)stack_mem;
+      *canary_ptr = 0xDEADBEEF;
 
-  void *stack_mem = k_malloc(stack_size);
-  if (!stack_mem)
-    return;
+      uint8_t *stack_top = (uint8_t *)stack_mem + stack_size;
 
-  uint32_t *canary_ptr = (uint32_t *)stack_mem;
-  *canary_ptr = 0xDEADBEEF;
+      new_node->task.id = id;
+      new_node->task.state = TASK_READY;
+      new_node->task.priority = priority;
+      new_node->task.base_priority = priority;
+      new_node->task.stack_size = stack_size;
+      new_node->task.canary_ptr = canary_ptr;
+      new_node->task.stack_ptr =
+          port_init_stack(stack_top, stack_size, task_func);
 
-  uint8_t *stack_top = (uint8_t *)stack_mem + stack_size;
-
-  new_node->task.id = id;
-  new_node->task.state = TASK_READY;
-  new_node->task.priority = priority;
-  new_node->task.base_priority = priority;
-  new_node->task.stack_size = stack_size;
-  new_node->task.canary_ptr = canary_ptr;
-  new_node->task.stack_ptr = port_init_stack(stack_top, stack_size, task_func);
-
-  port_enter_critical();
-  heap_push(new_node);
-  kernel.task_count++;
-  port_exit_critical();
+      port_enter_critical();
+      heap_push(new_node);
+      kernel.task_count++;
+      port_exit_critical();
+    }
+  }
 }
 
 void k_yield(void) { port_context_switch(); }
 
 /* Optimized Scheduler (Hot Path) */
 TOYOS_HOT void os_scheduler(void) {
+  bool needs_switch = true;
+
   if (kernel.current_node && (kernel.current_task->state == TASK_RUNNING ||
                               kernel.current_task->state == TASK_READY)) {
-    /* Fast Path */
-    if (kernel.ready_heap.size > 0 &&
-        kernel.current_task->priority >
-            kernel.ready_heap.nodes[0]->task.priority) {
-      return;
+    /* Fast Path Check */
+    if (kernel.ready_heap.size == 0 ||
+        (kernel.ready_heap.size > 0 &&
+         kernel.current_task->priority >=
+             kernel.ready_heap.nodes[0]->task.priority)) {
+      needs_switch = false;
     }
-    if (kernel.ready_heap.size == 0)
-      return;
 
-    kernel.current_task->state = TASK_READY;
-    heap_push(kernel.current_node);
+    if (needs_switch) {
+      kernel.current_task->state = TASK_READY;
+      heap_push(kernel.current_node);
+    }
   }
 
-  TaskNode *next_node = heap_pop();
-  if (next_node) {
-    next_node->task.state = TASK_RUNNING;
-    os_current_task_ptr = &next_node->task;
-    kernel.current_task = &next_node->task;
-    kernel.current_node = next_node;
+  if (needs_switch) {
+    TaskNode *next_node = heap_pop();
+    if (next_node != NULL) {
+      next_node->task.state = TASK_RUNNING;
+      os_current_task_ptr = &next_node->task;
+      kernel.current_task = &next_node->task;
+      kernel.current_node = next_node;
+    }
   }
 }
 
@@ -264,6 +275,7 @@ void k_delay(uint16_t ticks) {
 }
 
 void *k_malloc(size_t size) {
+  void *allocated_buffer = NULL;
   /* Simple first fit (assuming mem_manager initialized) */
   typedef struct BlockHeader {
     uint16_t size;
@@ -283,7 +295,7 @@ void *k_malloc(size_t size) {
   BlockHeader *prev = NULL;
   BlockHeader *curr = (BlockHeader *)kernel.mem_manager.free_list_head;
 
-  while (curr) {
+  while (curr != NULL && allocated_buffer == NULL) {
     if (curr->size >= total_size) {
       /* Split logic */
       if (curr->size >= total_size + sizeof(BlockHeader) + 4) {
@@ -294,19 +306,19 @@ void *k_malloc(size_t size) {
         curr->next = new_block;
       }
       /* Allocate */
-      if (prev)
+      if (prev != NULL) {
         prev->next = curr->next;
-      else
+      } else {
         kernel.mem_manager.free_list_head = curr->next;
-
-      port_exit_critical();
-      return (void *)((uint8_t *)curr + sizeof(BlockHeader));
+      }
+      allocated_buffer = (void *)((uint8_t *)curr + sizeof(BlockHeader));
+    } else {
+      prev = curr;
+      curr = curr->next;
     }
-    prev = curr;
-    curr = curr->next;
   }
   port_exit_critical();
-  return NULL;
+  return allocated_buffer;
 }
 
 void k_free(void *ptr) {
@@ -474,35 +486,43 @@ uint32_t k_get_time(void) { return kernel.system_tick; }
 
 extern "C" uint32_t os_kernel_syscall(uint8_t id, uint32_t a0, uint32_t a1,
                                       uint32_t a2, uint32_t a3) {
+  uint32_t result = 0;
   switch (id) {
   case SVC_YIELD:
     k_yield();
-    return 0;
+    break;
   case SVC_DELAY:
     k_delay((uint16_t)a0);
-    return 0;
+    break;
   case SVC_CREATE_TASK:
     k_create_task((uint8_t)a0, (void (*)(void))a1, (uint8_t)a2, (uint16_t)a3);
-    return 0;
+    break;
   case SVC_MALLOC:
-    return (uint32_t)k_malloc((size_t)a0);
+    result = (uint32_t)k_malloc((size_t)a0);
+    break;
   case SVC_FREE:
     k_free((void *)a0);
-    return 0;
+    break;
   case SVC_MUTEX_INIT:
     k_mutex_init((Mutex *)a0);
-    return 0;
+    break;
   case SVC_MUTEX_LOCK:
     k_mutex_lock((Mutex *)a0);
-    return 0;
+    break;
   case SVC_MUTEX_UNLOCK:
     k_mutex_unlock((Mutex *)a0);
-    return 0;
+    break;
   case SVC_GET_TIME:
-    return k_get_time();
+    result = k_get_time();
+    break;
+  case SVC_PRINT:
+    Serial.println((const char *)a0);
+    break;
   default:
-    return 0;
+    /* Unknown syscall */
+    break;
   }
+  return result;
 }
 
 /* --- PUBLIC API WRAPPERS --- */
@@ -619,6 +639,14 @@ void os_wdt_feed(void) { /* Call port WDT? Need k_wdt_feed? */ }
 void os_check_stack_overflow(void) {
   /* Iterate tasks and check canaries */
   /* Implementation omitted for brevity but required for linker */
+}
+
+void os_print(const char *msg) {
+#if TOYOS_USE_SVC
+  SVC_1(SVC_PRINT, msg);
+#else
+  Serial.println(msg);
+#endif
 }
 
 void os_print_info(void) {
