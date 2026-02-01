@@ -1,6 +1,6 @@
 /**
- * Arduino EEPROM Storage Driver Implementation
- * Compatible with AVR and Renesas R4 (Flash Emulation)
+ * Arduino EEPROM (Flash Emulation) Storage Driver
+ * Strictly bound to Renesas R4 platforms.
  */
 
 #include "storage_arduino_eeprom.h"

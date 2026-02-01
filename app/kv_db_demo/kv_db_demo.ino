@@ -1,19 +1,17 @@
 #include <Arduino.h>
 
-#include <kv_db.h>
-#include <toyos.h>
-
 #ifndef TOYOS_DEBUG_ALLOC
 #define TOYOS_DEBUG_ALLOC 0
 #endif
 
-/* Include storage driver for AVR/ARM */
+/* Include OS and KV Database */
+#include <hal/storage_driver.h>
+#include <kv_db.h>
+#include <toyos.h>
+
+
 #ifdef __AVR__
 #include <avr/wdt.h> // For watchdog control
-#include <hal/storage_avr_eeprom.h>
-
-#else
-#include <hal/storage_arduino_eeprom.h>
 #endif
 
 #ifdef __arm__
@@ -142,12 +140,9 @@ void process_command(char *cmd) {
 }
 
 void task_db_demo(void) {
-  /* Initialize storage driver */
-#ifdef __AVR__
-  storage_set_driver(storage_get_avr_eeprom_driver());
-#else
-  storage_set_driver(storage_get_arduino_eeprom_driver());
-#endif
+  /* Initialize storage driver (HAL automatically selects correct platform
+   * driver) */
+  storage_bind_platform_driver();
   storage_init();
 
   /* Initialize KV Database */

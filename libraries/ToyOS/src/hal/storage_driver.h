@@ -83,6 +83,12 @@ typedef struct {
 extern const storage_driver_t *current_storage_driver;
 
 /**
+ * Automatically set the active storage driver based on the current platform.
+ * @return STORAGE_OK on success.
+ */
+storage_result_t storage_bind_platform_driver(void);
+
+/**
  * Set the active storage driver.
  * @param driver Pointer to initialized driver structure.
  */
