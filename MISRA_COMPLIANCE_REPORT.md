@@ -63,6 +63,6 @@ The Syscall interface requires passing pointers through registers (`uint32_t`). 
 - [x] Initial Scan of Kernel Core
 - [x] Initial Scan of KV Database
 - [x] Created Compliance Report
-- [x] Refactor: Single Exit Point in `os_kernel_fixed.cpp`
+- [x] Refactor: Single Exit Point in `os_kernel.cpp`
 - [x] Refactor: Single Exit Point in `kv_db.cpp`
 - [ ] Add explicit boolean checks in controlling expressions (Rule 14.4)

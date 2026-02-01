@@ -330,7 +330,7 @@
  * Default: 1 (enabled)
  */
 #ifndef TOYOS_ENABLE_PRIORITY_INHERITANCE
-#define TOYOS_ENABLE_PRIORITY_INHERITANCE 1
+#define TOYOS_ENABLE_PRIORITY_INHERITANCE 0
 #endif
 
 /**
@@ -424,6 +424,15 @@
 #define TOYOS_COLD
 #define TOYOS_ALWAYS_INLINE inline
 #endif
+#endif
+
+/**
+ * Enable/Disable general kernel debugging (Serial output)
+ * 0: Disabled
+ * 1: Enabled
+ */
+#ifndef TOYOS_DEBUG_ENABLED
+#define TOYOS_DEBUG_ENABLED 0
 #endif
 
 #endif /* TOYOS_CONFIG_H */

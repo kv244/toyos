@@ -1,7 +1,7 @@
 Archive member included to satisfy reference by file (symbol)
 
 C:\Users\julia\AppData\Local\arduino\sketches\F3763A8963C1A0535084F45CFFF40696/..\..\cores\arduino_avr_uno_fe52a73b58f0821edfc7acc309ee7019\core.a(HardwareSerial.cpp.o)
-                              C:\Users\julia\AppData\Local\arduino\sketches\F3763A8963C1A0535084F45CFFF40696\sketch\kv_db_demo.ino.cpp.o (symbol from plugin) (_ZN14HardwareSerial5beginEmh)
+                              C:\Users\julia\AppData\Local\arduino\sketches\F3763A8963C1A0535084F45CFFF40696\sketch\kv_db_demo.ino.cpp.o (symbol from plugin) (_ZN14HardwareSerial9availableEv)
 C:\Users\julia\AppData\Local\arduino\sketches\F3763A8963C1A0535084F45CFFF40696/..\..\cores\arduino_avr_uno_fe52a73b58f0821edfc7acc309ee7019\core.a(HardwareSerial0.cpp.o)
                               C:\Users\julia\AppData\Local\arduino\sketches\F3763A8963C1A0535084F45CFFF40696\sketch\kv_db_demo.ino.cpp.o (symbol from plugin) (Serial)
 C:\Users\julia\AppData\Local\arduino\sketches\F3763A8963C1A0535084F45CFFF40696/..\..\cores\arduino_avr_uno_fe52a73b58f0821edfc7acc309ee7019\core.a(Print.cpp.o)
@@ -11,7 +11,9 @@ C:\Users\julia\AppData\Local\arduino\sketches\F3763A8963C1A0535084F45CFFF40696/.
 C:\Users\julia\AppData\Local\arduino\sketches\F3763A8963C1A0535084F45CFFF40696/..\..\cores\arduino_avr_uno_fe52a73b58f0821edfc7acc309ee7019\core.a(main.cpp.o)
                               c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5/crtatmega328p.o (main)
 C:\Users\julia\AppData\Local\arduino\sketches\F3763A8963C1A0535084F45CFFF40696/..\..\cores\arduino_avr_uno_fe52a73b58f0821edfc7acc309ee7019\core.a(wiring.c.o)
-                              C:\Users\julia\AppData\Local\arduino\sketches\F3763A8963C1A0535084F45CFFF40696\libraries\ToyOS\port\arm\port_arm_mpu.cpp.o (symbol from plugin) (delay)
+                              C:\Users\julia\AppData\Local\arduino\sketches\F3763A8963C1A0535084F45CFFF40696\sketch\kv_db_demo.ino.cpp.o (symbol from plugin) (millis)
+C:\Users\julia\AppData\Local\arduino\sketches\F3763A8963C1A0535084F45CFFF40696/..\..\cores\arduino_avr_uno_fe52a73b58f0821edfc7acc309ee7019\core.a(wiring_digital.c.o)
+                              C:\Users\julia\AppData\Local\arduino\sketches\F3763A8963C1A0535084F45CFFF40696\sketch\kv_db_demo.ino.cpp.o (symbol from plugin) (pinMode)
 C:\Users\julia\AppData\Local\arduino\sketches\F3763A8963C1A0535084F45CFFF40696/..\..\cores\arduino_avr_uno_fe52a73b58f0821edfc7acc309ee7019\core.a(hooks.c.o)
                               wiring.c.o (symbol from plugin) (yield)
 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_exit.o)
@@ -24,24 +26,24 @@ c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atme
                               C:\Users\julia\AppData\Local\arduino\sketches\F3763A8963C1A0535084F45CFFF40696\libraries\ToyOS\hal\storage_avr_eeprom.c.o (symbol from plugin) (eeprom_update_block)
 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libatmega328p.a(eeupd_byte.o)
                               c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libatmega328p.a(eeupd_block.o) (eeprom_update_r18)
-c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_udivmodqi4.o)
-                              C:\Users\julia\AppData\Local\Temp\ccG8OtQt.ltrans0.ltrans.o (__udivmodqi4)
 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_udivmodsi4.o)
-                              C:\Users\julia\AppData\Local\Temp\ccG8OtQt.ltrans0.ltrans.o (__udivmodsi4)
+                              C:\Users\julia\AppData\Local\Temp\ccQkp5jA.ltrans0.ltrans.o (__udivmodsi4)
 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_copy_data.o)
-                              C:\Users\julia\AppData\Local\Temp\ccG8OtQt.ltrans0.ltrans.o (__do_copy_data)
+                              C:\Users\julia\AppData\Local\Temp\ccQkp5jA.ltrans0.ltrans.o (__do_copy_data)
 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_clear_bss.o)
-                              C:\Users\julia\AppData\Local\Temp\ccG8OtQt.ltrans0.ltrans.o (__do_clear_bss)
+                              C:\Users\julia\AppData\Local\Temp\ccQkp5jA.ltrans0.ltrans.o (__do_clear_bss)
 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_ctors.o)
-                              C:\Users\julia\AppData\Local\Temp\ccG8OtQt.ltrans0.ltrans.o (__do_global_ctors)
+                              C:\Users\julia\AppData\Local\Temp\ccQkp5jA.ltrans0.ltrans.o (__do_global_ctors)
 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_tablejump2.o)
                               c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_ctors.o) (__tablejump2__)
-c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libc.a(memcpy.o)
-                              C:\Users\julia\AppData\Local\Temp\ccG8OtQt.ltrans0.ltrans.o (memcpy)
+c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libc.a(strchr.o)
+                              C:\Users\julia\AppData\Local\Temp\ccQkp5jA.ltrans0.ltrans.o (strchr)
 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libc.a(strcmp.o)
-                              C:\Users\julia\AppData\Local\Temp\ccG8OtQt.ltrans0.ltrans.o (strcmp)
+                              C:\Users\julia\AppData\Local\Temp\ccQkp5jA.ltrans0.ltrans.o (strcmp)
 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libc.a(strncmp.o)
-                              C:\Users\julia\AppData\Local\Temp\ccG8OtQt.ltrans0.ltrans.o (strncmp)
+                              C:\Users\julia\AppData\Local\Temp\ccQkp5jA.ltrans0.ltrans.o (strncmp)
+c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libc.a(strncpy.o)
+                              C:\Users\julia\AppData\Local\Temp\ccQkp5jA.ltrans0.ltrans.o (strncpy)
 
 Discarded input sections
 
@@ -49,6 +51,8 @@ Discarded input sections
  .bss           0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5/crtatmega328p.o
  .text          0x00000000        0x0 C:\Users\julia\AppData\Local\arduino\sketches\F3763A8963C1A0535084F45CFFF40696\sketch\kv_db_demo.ino.cpp.o (symbol from plugin)
  .gnu.linkonce.t._ZN14HardwareSerial5beginEm
+                0x00000000        0x0 C:\Users\julia\AppData\Local\arduino\sketches\F3763A8963C1A0535084F45CFFF40696\sketch\kv_db_demo.ino.cpp.o (symbol from plugin)
+ .gnu.linkonce.t._ZN14HardwareSerial5writeEi
                 0x00000000        0x0 C:\Users\julia\AppData\Local\arduino\sketches\F3763A8963C1A0535084F45CFFF40696\sketch\kv_db_demo.ino.cpp.o (symbol from plugin)
  .text          0x00000000        0x0 C:\Users\julia\AppData\Local\arduino\sketches\F3763A8963C1A0535084F45CFFF40696\libraries\KV_DB\kv_db.cpp.o (symbol from plugin)
  .text          0x00000000        0x0 C:\Users\julia\AppData\Local\arduino\sketches\F3763A8963C1A0535084F45CFFF40696\libraries\KV_DB\test_kv_db.cpp.o (symbol from plugin)
@@ -81,6 +85,7 @@ Discarded input sections
  .text          0x00000000        0x0 abi.cpp.o (symbol from plugin)
  .text          0x00000000        0x0 main.cpp.o (symbol from plugin)
  .text          0x00000000        0x0 wiring.c.o (symbol from plugin)
+ .text          0x00000000        0x0 wiring_digital.c.o (symbol from plugin)
  .text          0x00000000        0x0 hooks.c.o (symbol from plugin)
  .text          0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_exit.o)
  .data          0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_exit.o)
@@ -104,32 +109,12 @@ Discarded input sections
  .text          0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libatmega328p.a(eerd_block.o)
  .data          0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libatmega328p.a(eerd_block.o)
  .bss           0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libatmega328p.a(eerd_block.o)
- .text.avr-libc
-                0x00000000       0x20 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libatmega328p.a(eerd_block.o)
  .text          0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libatmega328p.a(eeupd_block.o)
  .data          0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libatmega328p.a(eeupd_block.o)
  .bss           0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libatmega328p.a(eeupd_block.o)
- .text.avr-libc
-                0x00000000       0x20 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libatmega328p.a(eeupd_block.o)
  .text          0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libatmega328p.a(eeupd_byte.o)
  .data          0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libatmega328p.a(eeupd_byte.o)
  .bss           0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libatmega328p.a(eeupd_byte.o)
- .text.avr-libc
-                0x00000000       0x24 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libatmega328p.a(eeupd_byte.o)
- .text          0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_udivmodqi4.o)
- .data          0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_udivmodqi4.o)
- .bss           0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_udivmodqi4.o)
- .text.libgcc.mul
-                0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_udivmodqi4.o)
- .text.libgcc   0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_udivmodqi4.o)
- .text.libgcc.prologue
-                0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_udivmodqi4.o)
- .text.libgcc.builtins
-                0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_udivmodqi4.o)
- .text.libgcc.fmul
-                0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_udivmodqi4.o)
- .text.libgcc.fixed
-                0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_udivmodqi4.o)
  .text          0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_udivmodsi4.o)
  .data          0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_udivmodsi4.o)
  .bss           0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_udivmodsi4.o)
@@ -207,15 +192,18 @@ Discarded input sections
                 0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_tablejump2.o)
  .text.libgcc.fixed
                 0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_tablejump2.o)
- .text          0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libc.a(memcpy.o)
- .data          0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libc.a(memcpy.o)
- .bss           0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libc.a(memcpy.o)
+ .text          0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libc.a(strchr.o)
+ .data          0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libc.a(strchr.o)
+ .bss           0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libc.a(strchr.o)
  .text          0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libc.a(strcmp.o)
  .data          0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libc.a(strcmp.o)
  .bss           0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libc.a(strcmp.o)
  .text          0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libc.a(strncmp.o)
  .data          0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libc.a(strncmp.o)
  .bss           0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libc.a(strncmp.o)
+ .text          0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libc.a(strncpy.o)
+ .data          0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libc.a(strncpy.o)
+ .bss           0x00000000        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libc.a(strncpy.o)
 
 Memory Configuration
 
@@ -234,7 +222,7 @@ Linker script and memory map
 Address of section .data set to 0x800100
 LOAD c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5/crtatmega328p.o
 LOAD C:\Users\julia\AppData\Local\arduino\sketches\F3763A8963C1A0535084F45CFFF40696\sketch\kv_db_demo.ino.cpp.o
-LOAD C:\Users\julia\AppData\Local\Temp\ccG8OtQt.ltrans0.ltrans.o
+LOAD C:\Users\julia\AppData\Local\Temp\ccQkp5jA.ltrans0.ltrans.o
 LOAD C:\Users\julia\AppData\Local\arduino\sketches\F3763A8963C1A0535084F45CFFF40696\libraries\KV_DB\kv_db.cpp.o
 LOAD C:\Users\julia\AppData\Local\arduino\sketches\F3763A8963C1A0535084F45CFFF40696\libraries\KV_DB\test_kv_db.cpp.o
 LOAD C:\Users\julia\AppData\Local\arduino\sketches\F3763A8963C1A0535084F45CFFF40696\libraries\ToyOS\hal\storage_arduino_eeprom.cpp.o
@@ -352,7 +340,7 @@ END GROUP
 .rela.plt
  *(.rela.plt)
 
-.text           0x00000000     0x2a42
+.text           0x00000000     0x2ba6
  *(.vectors)
  .vectors       0x00000000       0x68 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5/crtatmega328p.o
                 0x00000000                __vector_default
@@ -368,115 +356,126 @@ END GROUP
  *libprintf_flt.a:*(.progmem.data)
  *libc.a:*(.progmem.data)
  *(.progmem*)
- .progmem.data  0x00000068      0x2c2 C:\Users\julia\AppData\Local\Temp\ccG8OtQt.ltrans0.ltrans.o
-                0x0000032a                . = ALIGN (0x2)
+ .progmem.data  0x00000068      0x63e C:\Users\julia\AppData\Local\Temp\ccQkp5jA.ltrans0.ltrans.o
+                0x000006a6                . = ALIGN (0x2)
  *(.jumptables)
  *(.jumptables*)
  *(.lowtext)
  *(.lowtext*)
-                0x0000032a                __ctors_start = .
+                0x000006a6                __ctors_start = .
  *(.ctors)
- .ctors         0x0000032a        0x2 C:\Users\julia\AppData\Local\Temp\ccG8OtQt.ltrans0.ltrans.o
-                0x0000032c                __ctors_end = .
-                0x0000032c                __dtors_start = .
+ .ctors         0x000006a6        0x2 C:\Users\julia\AppData\Local\Temp\ccQkp5jA.ltrans0.ltrans.o
+                0x000006a8                __ctors_end = .
+                0x000006a8                __dtors_start = .
  *(.dtors)
-                0x0000032c                __dtors_end = .
+                0x000006a8                __dtors_end = .
  SORT(*)(.ctors)
  SORT(*)(.dtors)
  *(.init0)
- .init0         0x0000032c        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5/crtatmega328p.o
-                0x0000032c                __init
+ .init0         0x000006a8        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5/crtatmega328p.o
+                0x000006a8                __init
  *(.init0)
  *(.init1)
  *(.init1)
  *(.init2)
- .init2         0x0000032c        0xc c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5/crtatmega328p.o
+ .init2         0x000006a8        0xc c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5/crtatmega328p.o
  *(.init2)
  *(.init3)
  *(.init3)
  *(.init4)
- .init4         0x00000338       0x16 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_copy_data.o)
-                0x00000338                __do_copy_data
- .init4         0x0000034e       0x10 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_clear_bss.o)
-                0x0000034e                __do_clear_bss
+ .init4         0x000006b4       0x16 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_copy_data.o)
+                0x000006b4                __do_copy_data
+ .init4         0x000006ca       0x10 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_clear_bss.o)
+                0x000006ca                __do_clear_bss
  *(.init4)
  *(.init5)
  *(.init5)
  *(.init6)
- .init6         0x0000035e       0x16 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_ctors.o)
-                0x0000035e                __do_global_ctors
+ .init6         0x000006da       0x16 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_ctors.o)
+                0x000006da                __do_global_ctors
  *(.init6)
  *(.init7)
  *(.init7)
  *(.init8)
  *(.init8)
  *(.init9)
- .init9         0x00000374        0x8 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5/crtatmega328p.o
+ .init9         0x000006f0        0x8 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5/crtatmega328p.o
  *(.init9)
  *(.text)
- .text          0x0000037c        0x4 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5/crtatmega328p.o
-                0x0000037c                __vector_22
-                0x0000037c                __vector_1
-                0x0000037c                __vector_24
-                0x0000037c                __vector_12
-                0x0000037c                __bad_interrupt
-                0x0000037c                __vector_6
-                0x0000037c                __vector_3
-                0x0000037c                __vector_23
-                0x0000037c                __vector_25
-                0x0000037c                __vector_13
-                0x0000037c                __vector_17
-                0x0000037c                __vector_7
-                0x0000037c                __vector_5
-                0x0000037c                __vector_4
-                0x0000037c                __vector_9
-                0x0000037c                __vector_2
-                0x0000037c                __vector_21
-                0x0000037c                __vector_15
-                0x0000037c                __vector_8
-                0x0000037c                __vector_14
-                0x0000037c                __vector_10
-                0x0000037c                __vector_20
- .text          0x00000380     0x2060 C:\Users\julia\AppData\Local\Temp\ccG8OtQt.ltrans0.ltrans.o
-                0x000020c6                __vector_16
-                0x0000215a                __vector_19
-                0x000021a6                __vector_18
-                0x0000220a                __vector_11
- .text          0x000023e0      0x112 C:\Users\julia\AppData\Local\arduino\sketches\F3763A8963C1A0535084F45CFFF40696\libraries\ToyOS\port\avr\port_avr_asm.S.o
-                0x000023e0                port_context_switch
-                0x00002494                port_start_first_task
-                0x000024de                port_fast_zero_stack
-                0x000024f2                . = ALIGN (0x2)
+ .text          0x000006f8        0x4 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5/crtatmega328p.o
+                0x000006f8                __vector_22
+                0x000006f8                __vector_1
+                0x000006f8                __vector_24
+                0x000006f8                __vector_12
+                0x000006f8                __bad_interrupt
+                0x000006f8                __vector_6
+                0x000006f8                __vector_3
+                0x000006f8                __vector_23
+                0x000006f8                __vector_25
+                0x000006f8                __vector_13
+                0x000006f8                __vector_17
+                0x000006f8                __vector_7
+                0x000006f8                __vector_5
+                0x000006f8                __vector_4
+                0x000006f8                __vector_9
+                0x000006f8                __vector_2
+                0x000006f8                __vector_21
+                0x000006f8                __vector_15
+                0x000006f8                __vector_8
+                0x000006f8                __vector_14
+                0x000006f8                __vector_10
+                0x000006f8                __vector_20
+ .text          0x000006fc     0x1bf4 C:\Users\julia\AppData\Local\Temp\ccQkp5jA.ltrans0.ltrans.o
+                0x00001fd6                __vector_16
+                0x0000206a                __vector_19
+                0x000020b6                __vector_18
+                0x0000211a                __vector_11
+ .text          0x000022f0      0x112 C:\Users\julia\AppData\Local\arduino\sketches\F3763A8963C1A0535084F45CFFF40696\libraries\ToyOS\port\avr\port_avr_asm.S.o
+                0x000022f0                port_context_switch
+                0x000023a4                port_start_first_task
+                0x000023ee                port_fast_zero_stack
+                0x00002402                . = ALIGN (0x2)
  *(.text.*)
- .text.startup  0x000024f2      0x2f8 C:\Users\julia\AppData\Local\Temp\ccG8OtQt.ltrans0.ltrans.o
-                0x000024f2                main
- .text.hot      0x000027ea      0x19e C:\Users\julia\AppData\Local\Temp\ccG8OtQt.ltrans0.ltrans.o
-                0x000027ea                os_scheduler
+ .text.startup  0x00002402      0x4de C:\Users\julia\AppData\Local\Temp\ccQkp5jA.ltrans0.ltrans.o
+                0x00002402                main
+ .text.hot      0x000028e0      0x19e C:\Users\julia\AppData\Local\Temp\ccQkp5jA.ltrans0.ltrans.o
+                0x000028e0                os_scheduler
  .text.avr-libc
-                0x00002988        0xe c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libc.a(strcpy_P.o)
-                0x00002988                strcpy_P
+                0x00002a7e        0xe c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libc.a(strcpy_P.o)
+                0x00002a7e                strcpy_P
+ .text.avr-libc
+                0x00002a8c       0x20 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libatmega328p.a(eerd_block.o)
+                0x00002a8c                eeprom_read_block
+                0x00002a90                eeprom_read_blraw
+ .text.avr-libc
+                0x00002aac       0x20 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libatmega328p.a(eeupd_block.o)
+                0x00002aac                eeprom_update_block
+ .text.avr-libc
+                0x00002acc       0x24 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libatmega328p.a(eeupd_byte.o)
+                0x00002acc                eeprom_update_byte
+                0x00002ace                eeprom_update_r18
  .text.libgcc.div
-                0x00002996       0x18 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_udivmodqi4.o)
-                0x00002996                __udivmodqi4
- .text.libgcc.div
-                0x000029ae       0x44 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_udivmodsi4.o)
-                0x000029ae                __udivmodsi4
- .text.libgcc   0x000029f2        0xc c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_tablejump2.o)
-                0x000029f2                __tablejump2__
+                0x00002af0       0x44 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_udivmodsi4.o)
+                0x00002af0                __udivmodsi4
+ .text.libgcc   0x00002b34        0xc c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_tablejump2.o)
+                0x00002b34                __tablejump2__
  .text.avr-libc
-                0x000029fe       0x12 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libc.a(memcpy.o)
-                0x000029fe                memcpy
+                0x00002b40       0x16 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libc.a(strchr.o)
+                0x00002b40                strchr
  .text.avr-libc
-                0x00002a10       0x12 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libc.a(strcmp.o)
-                0x00002a10                strcmp
+                0x00002b56       0x12 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libc.a(strcmp.o)
+                0x00002b56                strcmp
  .text.avr-libc
-                0x00002a22       0x1c c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libc.a(strncmp.o)
-                0x00002a22                strncmp
-                0x00002a3e                . = ALIGN (0x2)
+                0x00002b68       0x1c c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libc.a(strncmp.o)
+                0x00002b68                strncmp
+ .text.avr-libc
+                0x00002b84       0x1e c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5\libc.a(strncpy.o)
+                0x00002b84                strncpy
+                0x00002ba2                . = ALIGN (0x2)
  *(.fini9)
- .fini9         0x00002a3e        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_exit.o)
-                0x00002a3e                _exit
-                0x00002a3e                exit
+ .fini9         0x00002ba2        0x0 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_exit.o)
+                0x00002ba2                _exit
+                0x00002ba2                exit
  *(.fini9)
  *(.fini8)
  *(.fini8)
@@ -495,43 +494,42 @@ END GROUP
  *(.fini1)
  *(.fini1)
  *(.fini0)
- .fini0         0x00002a3e        0x4 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_exit.o)
+ .fini0         0x00002ba2        0x4 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_exit.o)
  *(.fini0)
-                0x00002a42                _etext = .
+                0x00002ba6                _etext = .
 
-.data           0x00800100      0x24e load address 0x00002a42
+.data           0x00800100       0x56 load address 0x00002ba6
                 0x00800100                PROVIDE (__data_start, .)
  *(.data)
- .data          0x00800100        0x2 C:\Users\julia\AppData\Local\Temp\ccG8OtQt.ltrans0.ltrans.o
+ .data          0x00800100        0x2 C:\Users\julia\AppData\Local\Temp\ccQkp5jA.ltrans0.ltrans.o
  *(.data*)
  *(.gnu.linkonce.d*)
  *(.rodata)
- .rodata        0x00800102       0x12 C:\Users\julia\AppData\Local\Temp\ccG8OtQt.ltrans0.ltrans.o
+ .rodata        0x00800102       0x1e C:\Users\julia\AppData\Local\Temp\ccQkp5jA.ltrans0.ltrans.o
  *(.rodata*)
  .rodata.str1.1
-                0x00800114      0x23a C:\Users\julia\AppData\Local\Temp\ccG8OtQt.ltrans0.ltrans.o
-                                0x244 (size before relaxing)
+                0x00800120       0x36 C:\Users\julia\AppData\Local\Temp\ccQkp5jA.ltrans0.ltrans.o
  *(.gnu.linkonce.r*)
-                0x0080034e                . = ALIGN (0x2)
-                0x0080034e                _edata = .
-                0x0080034e                PROVIDE (__data_end, .)
+                0x00800156                . = ALIGN (0x2)
+                0x00800156                _edata = .
+                0x00800156                PROVIDE (__data_end, .)
 
-.bss            0x0080034e      0x48a
-                0x0080034e                PROVIDE (__bss_start, .)
+.bss            0x00800156      0x54c
+                0x00800156                PROVIDE (__bss_start, .)
  *(.bss)
- .bss           0x0080034e      0x48a C:\Users\julia\AppData\Local\Temp\ccG8OtQt.ltrans0.ltrans.o
-                0x0080034e                os_current_task_ptr
+ .bss           0x00800156      0x54c C:\Users\julia\AppData\Local\Temp\ccQkp5jA.ltrans0.ltrans.o
+                0x00800156                os_current_task_ptr
  *(.bss*)
  *(COMMON)
-                0x008007d8                PROVIDE (__bss_end, .)
-                0x00002a42                __data_load_start = LOADADDR (.data)
-                0x00002c90                __data_load_end = (__data_load_start + SIZEOF (.data))
+                0x008006a2                PROVIDE (__bss_end, .)
+                0x00002ba6                __data_load_start = LOADADDR (.data)
+                0x00002bfc                __data_load_end = (__data_load_start + SIZEOF (.data))
 
-.noinit         0x008007d8        0x0
+.noinit         0x008006a2        0x0
                 [!provide]                PROVIDE (__noinit_start, .)
  *(.noinit*)
                 [!provide]                PROVIDE (__noinit_end, .)
-                0x008007d8                _end = .
+                0x008006a2                _end = .
                 [!provide]                PROVIDE (__heap_start, .)
 
 .eeprom         0x00810000        0x0
@@ -573,7 +571,7 @@ END GROUP
 
 .comment        0x00000000       0x11
  *(.comment)
- .comment       0x00000000       0x11 C:\Users\julia\AppData\Local\Temp\ccG8OtQt.ltrans0.ltrans.o
+ .comment       0x00000000       0x11 C:\Users\julia\AppData\Local\Temp\ccQkp5jA.ltrans0.ltrans.o
                                  0x12 (size before relaxing)
 
 .note.gnu.avr.deviceinfo
@@ -596,82 +594,77 @@ END GROUP
 .debug_sfnames
  *(.debug_sfnames)
 
-.debug_aranges  0x00000000      0x138
+.debug_aranges  0x00000000      0x118
  *(.debug_aranges)
  .debug_aranges
-                0x00000000       0x38 C:\Users\julia\AppData\Local\Temp\ccG8OtQt.ltrans0.ltrans.o
+                0x00000000       0x38 C:\Users\julia\AppData\Local\Temp\ccQkp5jA.ltrans0.ltrans.o
  .debug_aranges
                 0x00000038       0x20 C:\Users\julia\AppData\Local\arduino\sketches\F3763A8963C1A0535084F45CFFF40696\libraries\ToyOS\port\avr\port_avr_asm.S.o
  .debug_aranges
                 0x00000058       0x20 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_exit.o)
  .debug_aranges
-                0x00000078       0x20 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_udivmodqi4.o)
+                0x00000078       0x20 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_udivmodsi4.o)
  .debug_aranges
-                0x00000098       0x20 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_udivmodsi4.o)
+                0x00000098       0x20 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_copy_data.o)
  .debug_aranges
-                0x000000b8       0x20 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_copy_data.o)
+                0x000000b8       0x20 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_clear_bss.o)
  .debug_aranges
-                0x000000d8       0x20 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_clear_bss.o)
+                0x000000d8       0x20 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_ctors.o)
  .debug_aranges
-                0x000000f8       0x20 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_ctors.o)
- .debug_aranges
-                0x00000118       0x20 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_tablejump2.o)
+                0x000000f8       0x20 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_tablejump2.o)
 
 .debug_pubnames
  *(.debug_pubnames)
 
-.debug_info     0x00000000     0x6e57
+.debug_info     0x00000000     0x7415
  *(.debug_info .gnu.linkonce.wi.*)
  .debug_info    0x00000000      0x5f4 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5/crtatmega328p.o
- .debug_info    0x000005f4     0x62b6 C:\Users\julia\AppData\Local\Temp\ccG8OtQt.ltrans0.ltrans.o
- .debug_info    0x000068aa       0x90 C:\Users\julia\AppData\Local\arduino\sketches\F3763A8963C1A0535084F45CFFF40696\libraries\ToyOS\port\avr\port_avr_asm.S.o
- .debug_info    0x0000693a       0xbb c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_exit.o)
- .debug_info    0x000069f5       0xbb c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_udivmodqi4.o)
- .debug_info    0x00006ab0       0xbb c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_udivmodsi4.o)
- .debug_info    0x00006b6b       0xbb c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_copy_data.o)
- .debug_info    0x00006c26       0xbb c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_clear_bss.o)
- .debug_info    0x00006ce1       0xbb c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_ctors.o)
- .debug_info    0x00006d9c       0xbb c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_tablejump2.o)
+ .debug_info    0x000005f4     0x692f C:\Users\julia\AppData\Local\Temp\ccQkp5jA.ltrans0.ltrans.o
+ .debug_info    0x00006f23       0x90 C:\Users\julia\AppData\Local\arduino\sketches\F3763A8963C1A0535084F45CFFF40696\libraries\ToyOS\port\avr\port_avr_asm.S.o
+ .debug_info    0x00006fb3       0xbb c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_exit.o)
+ .debug_info    0x0000706e       0xbb c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_udivmodsi4.o)
+ .debug_info    0x00007129       0xbb c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_copy_data.o)
+ .debug_info    0x000071e4       0xbb c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_clear_bss.o)
+ .debug_info    0x0000729f       0xbb c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_ctors.o)
+ .debug_info    0x0000735a       0xbb c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_tablejump2.o)
 
-.debug_abbrev   0x00000000      0xf57
+.debug_abbrev   0x00000000      0xf42
  *(.debug_abbrev)
  .debug_abbrev  0x00000000      0x5a2 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5/crtatmega328p.o
- .debug_abbrev  0x000005a2      0x915 C:\Users\julia\AppData\Local\Temp\ccG8OtQt.ltrans0.ltrans.o
- .debug_abbrev  0x00000eb7       0x14 C:\Users\julia\AppData\Local\arduino\sketches\F3763A8963C1A0535084F45CFFF40696\libraries\ToyOS\port\avr\port_avr_asm.S.o
- .debug_abbrev  0x00000ecb       0x14 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_exit.o)
- .debug_abbrev  0x00000edf       0x14 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_udivmodqi4.o)
- .debug_abbrev  0x00000ef3       0x14 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_udivmodsi4.o)
- .debug_abbrev  0x00000f07       0x14 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_copy_data.o)
- .debug_abbrev  0x00000f1b       0x14 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_clear_bss.o)
- .debug_abbrev  0x00000f2f       0x14 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_ctors.o)
- .debug_abbrev  0x00000f43       0x14 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_tablejump2.o)
+ .debug_abbrev  0x000005a2      0x914 C:\Users\julia\AppData\Local\Temp\ccQkp5jA.ltrans0.ltrans.o
+ .debug_abbrev  0x00000eb6       0x14 C:\Users\julia\AppData\Local\arduino\sketches\F3763A8963C1A0535084F45CFFF40696\libraries\ToyOS\port\avr\port_avr_asm.S.o
+ .debug_abbrev  0x00000eca       0x14 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_exit.o)
+ .debug_abbrev  0x00000ede       0x14 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_udivmodsi4.o)
+ .debug_abbrev  0x00000ef2       0x14 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_copy_data.o)
+ .debug_abbrev  0x00000f06       0x14 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_clear_bss.o)
+ .debug_abbrev  0x00000f1a       0x14 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_ctors.o)
+ .debug_abbrev  0x00000f2e       0x14 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_tablejump2.o)
 
-.debug_line     0x00000000     0x22e7
+.debug_line     0x00000000     0x23d2
  *(.debug_line .debug_line.* .debug_line_end)
  .debug_line    0x00000000       0x1a c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5/crtatmega328p.o
- .debug_line    0x0000001a     0x1af7 C:\Users\julia\AppData\Local\Temp\ccG8OtQt.ltrans0.ltrans.o
- .debug_line    0x00001b11      0x38a C:\Users\julia\AppData\Local\arduino\sketches\F3763A8963C1A0535084F45CFFF40696\libraries\ToyOS\port\avr\port_avr_asm.S.o
- .debug_line    0x00001e9b       0x62 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_exit.o)
- .debug_line    0x00001efd       0x9e c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_udivmodqi4.o)
- .debug_line    0x00001f9b      0x122 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_udivmodsi4.o)
- .debug_line    0x000020bd       0x98 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_copy_data.o)
- .debug_line    0x00002155       0x86 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_clear_bss.o)
- .debug_line    0x000021db       0x92 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_ctors.o)
- .debug_line    0x0000226d       0x7a c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_tablejump2.o)
+ .debug_line    0x0000001a     0x1c80 C:\Users\julia\AppData\Local\Temp\ccQkp5jA.ltrans0.ltrans.o
+ .debug_line    0x00001c9a      0x38a C:\Users\julia\AppData\Local\arduino\sketches\F3763A8963C1A0535084F45CFFF40696\libraries\ToyOS\port\avr\port_avr_asm.S.o
+ .debug_line    0x00002024       0x62 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_exit.o)
+ .debug_line    0x00002086      0x122 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_udivmodsi4.o)
+ .debug_line    0x000021a8       0x98 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_copy_data.o)
+ .debug_line    0x00002240       0x86 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_clear_bss.o)
+ .debug_line    0x000022c6       0x92 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_ctors.o)
+ .debug_line    0x00002358       0x7a c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/avr5\libgcc.a(_tablejump2.o)
 
-.debug_frame    0x00000000      0x810
+.debug_frame    0x00000000      0x758
  *(.debug_frame)
- .debug_frame   0x00000000      0x810 C:\Users\julia\AppData\Local\Temp\ccG8OtQt.ltrans0.ltrans.o
+ .debug_frame   0x00000000      0x758 C:\Users\julia\AppData\Local\Temp\ccQkp5jA.ltrans0.ltrans.o
 
-.debug_str      0x00000000     0x11a2
+.debug_str      0x00000000     0x1233
  *(.debug_str)
  .debug_str     0x00000000      0x208 c:/users/julia/appdata/local/arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/bin/../lib/gcc/avr/7.3.0/../../../../avr/lib/avr5/crtatmega328p.o
- .debug_str     0x00000208      0xf9a C:\Users\julia\AppData\Local\Temp\ccG8OtQt.ltrans0.ltrans.o
-                               0x1123 (size before relaxing)
+ .debug_str     0x00000208     0x102b C:\Users\julia\AppData\Local\Temp\ccQkp5jA.ltrans0.ltrans.o
+                               0x11c0 (size before relaxing)
 
-.debug_loc      0x00000000     0x3984
+.debug_loc      0x00000000     0x38e6
  *(.debug_loc)
- .debug_loc     0x00000000     0x3984 C:\Users\julia\AppData\Local\Temp\ccG8OtQt.ltrans0.ltrans.o
+ .debug_loc     0x00000000     0x38e6 C:\Users\julia\AppData\Local\Temp\ccQkp5jA.ltrans0.ltrans.o
 
 .debug_macinfo
  *(.debug_macinfo)
@@ -691,9 +684,9 @@ END GROUP
 .debug_pubtypes
  *(.debug_pubtypes)
 
-.debug_ranges   0x00000000      0x7f0
+.debug_ranges   0x00000000      0x610
  *(.debug_ranges)
- .debug_ranges  0x00000000      0x7f0 C:\Users\julia\AppData\Local\Temp\ccG8OtQt.ltrans0.ltrans.o
+ .debug_ranges  0x00000000      0x610 C:\Users\julia\AppData\Local\Temp\ccQkp5jA.ltrans0.ltrans.o
 
 .debug_macro
  *(.debug_macro)

@@ -46,14 +46,16 @@ extern void *os_current_task_ptr;
  */
 uint8_t *port_init_stack(uint8_t *stack_top, uint16_t stack_size,
                          void (*task_func)(void)) {
-  uint8_t *sp = stack_top + stack_size - 1;
+  uint8_t *sp = stack_top - 1;
 
   /* Store return address (task function) */
+  /* Store return address (task function) */
   uint16_t func_addr = (uint16_t)(uintptr_t)task_func;
-  *sp-- = func_addr & 0xFF;        /* PC Low byte */
-  *sp-- = (func_addr >> 8) & 0xFF; /* PC High byte */
+  *sp-- = (uint8_t)(func_addr & 0xFF);        /* PC Low byte */
+  *sp-- = (uint8_t)((func_addr >> 8) & 0xFF); /* PC High byte */
 
   /* Initial register values */
+  /* Order: R0 pushed first, SREG, then R1 pushed last (Top of stack) */
   *sp-- = 0x00;                /* R0 */
   *sp-- = PORT_AVR_SREG_I_BIT; /* SREG (interrupts enabled) */
   *sp-- = 0x00;                /* R1 (zero register) */
@@ -164,8 +166,8 @@ ISR(TIMER1_COMPA_vect, ISR_NAKED) {
   /* Load new SP from TCB */
   if (os_current_task_ptr) {
     uint16_t sp_val = (uint16_t)(*(uint8_t **)os_current_task_ptr);
-    SPL = sp_val & 0xFF;
     SPH = sp_val >> 8;
+    SPL = sp_val & 0xFF;
   }
 
   /* Restore context (inline assembly) */
@@ -256,6 +258,20 @@ void port_wdt_feed(void) { wdt_reset(); }
  * Disable watchdog timer.
  */
 void port_wdt_disable(void) { wdt_disable(); }
+
+/**
+ * Early watchdog disable (AVR specific).
+ *
+ * This function is placed in the .init3 section, which runs immediately
+ * after reset, before the main() function and before C global constructors.
+ * This is the most robust way to prevent watchdog-induced boot loops on AVR.
+ */
+void port_early_wdt_disable(void) __attribute__((naked))
+__attribute__((section(".init3")));
+void port_early_wdt_disable(void) {
+  MCUSR = 0;
+  wdt_disable();
+}
 
 /* ========================================================================
  * PLATFORM INFORMATION

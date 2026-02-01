@@ -56,8 +56,6 @@ port_context_switch:
     lds r27, os_current_task_ptr + 1
     
     ; Add offset to reach stack_ptr field - REMOVED for optimization (Offset=0)
-    ; adiw r26, TCB_STACK_PTR_OFFSET 
-    
     in r0, _SFR_IO_ADDR(SPL)
     st X+, r0
     in r0, _SFR_IO_ADDR(SPH)
@@ -79,9 +77,11 @@ port_context_switch:
     ; adiw r26, TCB_STACK_PTR_OFFSET
     
     ld r0, X+
+    ; No changes to memory load order, but we must update SP in SPH:SPL order
+    ld r1, X
+    out _SFR_IO_ADDR(SPH), r1
     out _SFR_IO_ADDR(SPL), r0
-    ld r0, X
-    out _SFR_IO_ADDR(SPH), r0
+    clr r1 ; Restore zero register
 
 .no_task:
     ; --- RESTORE CONTEXT ---
@@ -131,8 +131,8 @@ port_context_switch:
  */
 port_start_first_task:
     ; Load SP from r24:r25
-    out _SFR_IO_ADDR(SPL), r24
     out _SFR_IO_ADDR(SPH), r25
+    out _SFR_IO_ADDR(SPL), r24
     
     ; --- RESTORE CONTEXT ---
     pop r31

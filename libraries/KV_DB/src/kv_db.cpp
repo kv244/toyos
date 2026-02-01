@@ -188,6 +188,7 @@ kv_result_t kv_init(void) {
 
         /* Move to next record */
         offset += sizeof(KVRecord) + rec.key_len + rec.val_len;
+        os_wdt_feed(); // Feed watchdog during long initialization
       }
     }
   }
@@ -391,25 +392,26 @@ kv_result_t kv_clear(void) {
   kv_hal_lock(&kv_db_lock);
 
   for (uint16_t s = 0; s < KV_NUM_SECTORS; s++) {
-    if (storage_erase(s * KV_SECTOR_SIZE, KV_SECTOR_SIZE) != STORAGE_OK) {
-      kv_hal_unlock(&kv_db_lock);
-      return KV_ERR_EEPROM;
-    }
-  }
-
-  current_seq = 1;
-  SectorHeader head = {KV_SECTOR_MAGIC, current_seq};
-  if (storage_write(0, &head, sizeof(SectorHeader)) != STORAGE_OK) {
+    os_wdt_feed();
     kv_hal_unlock(&kv_db_lock);
     return KV_ERR_EEPROM;
   }
+  os_wdt_feed();
+}
 
-  current_write_sector = 0;
-  current_write_offset = KV_RECORDS_OFFSET;
-  kv_index_count = 0;
-
+current_seq = 1;
+SectorHeader head = {KV_SECTOR_MAGIC, current_seq};
+if (storage_write(0, &head, sizeof(SectorHeader)) != STORAGE_OK) {
   kv_hal_unlock(&kv_db_lock);
-  return KV_SUCCESS;
+  return KV_ERR_EEPROM;
+}
+
+current_write_sector = 0;
+current_write_offset = KV_RECORDS_OFFSET;
+kv_index_count = 0;
+
+kv_hal_unlock(&kv_db_lock);
+return KV_SUCCESS;
 }
 
 /* --- API: Compact --- */
@@ -511,6 +513,7 @@ int16_t kv_compact(void) {
 
     if (val)
       os_free(val);
+    os_wdt_feed(); // Feed watchdog during compaction
   }
 
   os_free(old_index);
@@ -538,31 +541,31 @@ kv_result_t kv_iterate(const char *prefix, kv_iter_cb_t cb, void *ctx) {
     const char *key = get_key_for_entry(&kv_index[i], temp_key);
 
     if (p_len == 0 || strncmp(key, prefix, p_len) == 0) {
-      /* Read value and callback */
+      /* Read value into temporary buffer (avoid large heap allocs while
+         locked). We copy a small preview (up to KV_ITER_TEMP_BUF_SIZE) and call
+         the callback outside the DB lock so callbacks can be slow or use heap.
+       */
       uint32_t addr = kv_index[i].addr;
       KVRecord rec;
       if (storage_read(addr, &rec, sizeof(KVRecord)) != STORAGE_OK)
         continue;
 
-      void *v_ptr;
-      bool allocated = false;
-      if (rec.val_len <= sizeof(temp_val)) {
-        v_ptr = temp_val;
-      } else {
-        v_ptr = os_malloc(rec.val_len);
-        if (!v_ptr)
-          continue; /* OOM Check */
-        allocated = true;
-      }
+      size_t read_len =
+          (rec.val_len <= sizeof(temp_val)) ? rec.val_len : sizeof(temp_val);
+      if (storage_read(addr + sizeof(KVRecord) + rec.key_len, temp_val,
+                       read_len) != STORAGE_OK)
+        continue;
 
-      if (v_ptr) {
-        if (storage_read(addr + sizeof(KVRecord) + rec.key_len, v_ptr,
-                         rec.val_len) == STORAGE_OK) {
-          cb(key, v_ptr, rec.val_len, ctx);
-        }
-        if (allocated)
-          os_free(v_ptr);
-      }
+      /* Copy key to stack-owned buffer to allow calling callback outside lock
+       */
+      char key_copy[KV_MAX_KEY_LEN + 1];
+      strncpy(key_copy, key, KV_MAX_KEY_LEN);
+      key_copy[KV_MAX_KEY_LEN] = '\0';
+
+      /* Call user callback without holding DB lock */
+      kv_hal_unlock(&kv_db_lock);
+      cb(key_copy, temp_val, (uint16_t)read_len, ctx);
+      kv_hal_lock(&kv_db_lock);
     }
   }
 

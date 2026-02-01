@@ -141,9 +141,9 @@ static inline bool port_atomic_cas_u8(volatile uint8_t *ptr, uint8_t exp,
  *
  * @param timeout_ms Timeout period in milliseconds
  */
-// void port_wdt_init(uint16_t timeout_ms);
-// void port_wdt_feed(void);
-// void port_wdt_disable(void);
+void port_wdt_init(uint16_t timeout_ms);
+void port_wdt_feed(void);
+void port_wdt_disable(void);
 
 /* ========================================================================
  * PLATFORM INFORMATION

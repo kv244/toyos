@@ -466,3 +466,23 @@ This is an educational project. Feel free to fork, modify, and learn from the co
 - Memory management on constrained systems
 - EEPROM persistence and log-structured storage
 - Thread-safe programming with mutexes
+## 🎓 Lessons Learned (AVR Porting)
+
+### Stack Initialization & Context Switching
+*   **PC Byte Order:** The AVR stack stores the Program Counter (PC) in **High Byte then Low Byte** order (when pushed manually). This means the High Byte is at the lower memory address (Top of Stack). This aligns with the `RET` instruction which pops `$PC_H` then `$PC_L`.
+    *   *Correct:* `push PCH; push PCL` (Logic: PCH at `SP`, PCL at `SP-1`? No. `*sp-- = PCL; *sp-- = PCH` results in `[PCH][PCL]`).
+    *   *Verified Code:* `*sp-- = (func & 0xFF); *sp-- = ((func >> 8) & 0xFF);`
+*   **GCC Function Pointers:** `avr-gcc` function pointers for ATmega328P (16-bit PC) are **Word Addresses** (e.g., `0x35D`). They do **not** need to be shifted (`>> 1`) when pushing to the stack for `RET`. The hardware `RET` uses the value directly (or GCC already pre-adjusted it).
+*   **Register Order:** Context save/restore order must match exactly.
+    *   Save: `Push R0, SREG, R1 ... R31`
+    *   Restore: `Pop R31 ... R1, SREG, R0`
+
+### Stack Overflow & ISRs
+*   **ISR Overhead:** The Timer1 ISR (Scheduler tick) consumes ~35 bytes of stack (32 registers + SREG + return address).
+*   **Task Stack Sizing:** Small stacks (e.g., 64-96 bytes) are insufficient for tasks that get preempted by the scheduler ISR.
+    *   *Minimum Recommended:* 160 bytes for Idle, 256+ bytes for Application tasks.
+*   **Manifestation:** Stack overflows often looked like "Reset loops" or "Freezes" because the ISR would overwrite the TCB or kernel variables.
+
+### Debugging Strategy
+*   **Isolate Interrupts:** Disabling `TIMSK1` (Timer Interrupt) was key to verifying if the "Task Jump" logic was correct. If the task started with Timer disabled, the Jump was good, and the crash was likely the ISR or Stack Overflow.
+*   **Memory Protection:** Increased `mem_pool` allocation significantly (400 -> 800 bytes) to rule out heap exhaustion.

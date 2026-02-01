@@ -7,6 +7,15 @@
 #include <Arduino.h>
 #endif
 
+/* Enable allocator debug prints for troubleshooting */
+#ifndef TOYOS_DEBUG_ALLOC
+#define TOYOS_DEBUG_ALLOC 0
+#endif
+
+#ifndef TOYOS_MAX_TASKS
+#define TOYOS_MAX_TASKS 4
+#endif
+
 #if TOYOS_USE_MPU && (defined(__ARM_ARCH_7M__) || defined(__ARM_ARCH_7EM__))
 #include "port/arm/port_arm_mpu.h"
 #define TOYOS_USE_SVC 1
@@ -35,8 +44,9 @@ enum {
   SVC_PRINT
 };
 
-/* Dynamic Task Pool */
-static TaskNode *task_pool = NULL;
+/* Static Task Pool */
+static TaskNode static_task_pool[MAX_TASKS];
+static TaskNode *task_pool = static_task_pool;
 static uint8_t task_pool_index = 0;
 
 /* Global Kernel */
@@ -148,10 +158,9 @@ void k_init(uint8_t *mem_pool, uint16_t mem_size) {
   first_block->next = NULL;
   kernel.mem_manager.free_list_head = (void *)first_block;
 
-  /* Alloc Task Pool */
-  if (task_pool == NULL) {
-    task_pool = (TaskNode *)k_malloc(sizeof(TaskNode) * MAX_TASKS);
-  }
+  /* silent init */
+
+  /* Static Task Pool already set up */
   task_pool_index = 0;
 
 #if TOYOS_USE_MPU
@@ -161,6 +170,26 @@ void k_init(uint8_t *mem_pool, uint16_t mem_size) {
 
 void k_start(void) {
   if (kernel.task_count > 0) {
+#if TOYOS_DEBUG_ENABLED
+    Serial.println(F("DBG: k_start scheduler"));
+    Serial.flush();
+#endif
+    /* Pick the first task to run */
+    os_scheduler();
+
+    if (kernel.current_task != NULL) {
+#if TOYOS_DEBUG_ENABLED
+      Serial.print(F("DBG: k_start jump to id="));
+      Serial.println(kernel.current_task->id);
+      Serial.flush();
+#endif
+    } else {
+      Serial.println(F("FATAL: no task selected"));
+      Serial.flush();
+      while (1)
+        ;
+    }
+
     port_timer_init();
     port_start_first_task((uint8_t *)kernel.current_task->stack_ptr);
   }
@@ -169,35 +198,59 @@ void k_start(void) {
 void k_create_task(uint8_t id, void (*task_func)(void), uint8_t priority,
                    uint16_t stack_size) {
   TaskNode *new_node = get_task_node();
-  if (new_node != NULL) {
-    void *stack_mem = k_malloc(stack_size);
-    if (stack_mem != NULL) {
-      uint32_t *canary_ptr = (uint32_t *)stack_mem;
-      *canary_ptr = 0xDEADBEEF;
-
-      uint8_t *stack_top = (uint8_t *)stack_mem + stack_size;
-
-      new_node->task.id = id;
-      new_node->task.state = TASK_READY;
-      new_node->task.priority = priority;
-      new_node->task.base_priority = priority;
-      new_node->task.stack_size = stack_size;
-      new_node->task.canary_ptr = canary_ptr;
-      new_node->task.stack_ptr =
-          port_init_stack(stack_top, stack_size, task_func);
-
-      port_enter_critical();
-      heap_push(new_node);
-      kernel.task_count++;
-      port_exit_critical();
-    }
+  if (new_node == NULL) {
+    /* Debug: task_pool exhausted or not allocated */
+#if defined(ARDUINO)
+    Serial.println(
+        F("DEBUG: get_task_node returned NULL (task pool exhausted)"));
+#endif
+    return;
   }
+
+  void *stack_mem = k_malloc(stack_size);
+  if (stack_mem == NULL) {
+#if TOYOS_DEBUG_ENABLED
+    Serial.print(F("FAIL: malloc task "));
+    Serial.println(id);
+    Serial.flush();
+#endif
+    return;
+  }
+
+#if TOYOS_DEBUG_ENABLED
+  Serial.print(F(" OK: malloc task "));
+  Serial.print(id);
+  Serial.print(F(" addr=0x"));
+  Serial.print((uint16_t)stack_mem, HEX);
+  Serial.print(F(" func=0x"));
+  Serial.println((uint16_t)(uintptr_t)task_func, HEX);
+  Serial.flush();
+#endif
+
+  uint32_t *canary_ptr = (uint32_t *)stack_mem;
+  *canary_ptr = 0xDEADBEEF;
+
+  uint8_t *stack_top = (uint8_t *)stack_mem + stack_size;
+
+  new_node->task.id = id;
+  new_node->task.state = TASK_READY;
+  new_node->task.priority = priority;
+  new_node->task.base_priority = priority;
+  new_node->task.stack_size = stack_size;
+  new_node->task.canary_ptr = canary_ptr;
+  new_node->task.stack_ptr = port_init_stack(stack_top, stack_size, task_func);
+
+  port_enter_critical();
+  heap_push(new_node);
+  kernel.task_count++;
+  port_exit_critical();
 }
 
 void k_yield(void) { port_context_switch(); }
 
 /* Optimized Scheduler (Hot Path) */
 TOYOS_HOT void os_scheduler(void) {
+  port_enter_critical();
   bool needs_switch = true;
 
   if (kernel.current_node && (kernel.current_task->state == TASK_RUNNING ||
@@ -225,6 +278,7 @@ TOYOS_HOT void os_scheduler(void) {
       kernel.current_node = next_node;
     }
   }
+  port_exit_critical();
 }
 
 TOYOS_HOT void os_system_tick(void) {
@@ -294,6 +348,8 @@ void *k_malloc(size_t size) {
   size = (size + TOYOS_MEM_ALIGN_MASK) & ~TOYOS_MEM_ALIGN_MASK;
   uint16_t total_size = size + sizeof(BlockHeader);
 
+  /* silent k_malloc */
+
   port_enter_critical();
   BlockHeader *prev = NULL;
   BlockHeader *curr = (BlockHeader *)kernel.mem_manager.free_list_head;
@@ -320,6 +376,9 @@ void *k_malloc(size_t size) {
       curr = curr->next;
     }
   }
+
+  /* silent k_malloc result */
+
   port_exit_critical();
   return allocated_buffer;
 }
@@ -327,6 +386,11 @@ void *k_malloc(size_t size) {
 void k_free(void *ptr) {
   if (!ptr)
     return;
+
+#if defined(ARDUINO) && TOYOS_DEBUG_ALLOC
+  Serial.print(F("DEBUG: k_free ptr=0x"));
+  Serial.println((unsigned int)ptr, HEX);
+#endif
 
   typedef struct BlockHeader {
     uint16_t size;
@@ -682,10 +746,14 @@ void *os_mq_receive(MessageQueue *q) {
 void os_enter_idle(void) {
 #if defined(__arm__)
   __asm volatile("wfi");
+#elif defined(__AVR__)
+  cpu_idle();
 #endif
 }
 
-void os_wdt_feed(void) { /* Call port WDT? Need k_wdt_feed? */ }
+void os_wdt_feed(void) { port_wdt_feed(); }
+
+void os_wdt_init(uint16_t timeout_ms) { port_wdt_init(timeout_ms); }
 
 void os_check_stack_overflow(void) {
   /* Iterate tasks and check canaries */

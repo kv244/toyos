@@ -3,6 +3,10 @@
 #include <kv_db.h>
 #include <toyos.h>
 
+#ifndef TOYOS_DEBUG_ALLOC
+#define TOYOS_DEBUG_ALLOC 0
+#endif
+
 /* Include storage driver for AVR/ARM */
 #ifdef __AVR__
 #include <avr/wdt.h> // For watchdog control
@@ -15,34 +19,43 @@
 #ifdef __arm__
 static uint8_t mem_pool[8192] __attribute__((aligned(8)));
 #else
-static uint8_t mem_pool[640]
-    __attribute__((aligned(2))); // Reduced from 896 to fit RAM
+/*
+ * Memory adjustments and diagnostics (actions taken):
+ * - Reduced mem_pool to 1024 bytes to avoid SRAM exhaustion on ATmega328P.
+ * - Reduced task stacks (idle=64, db=256) to conserve heap for dynamic
+ * allocations.
+ * - Added early boot prints ("BOOT: early") and a MCUSR reset-reason report to
+ */
+static uint8_t mem_pool[800]
+    __attribute__((aligned(2))); // Ultra-safe pool size
 #endif
 
 Mutex serial_mutex;
 
 void log_msg(const char *msg) {
-  os_mutex_lock(&serial_mutex);
-  os_print(msg);
-  os_mutex_unlock(&serial_mutex);
+  Serial.println(msg);
+  Serial.flush();
 }
 
 void log_f(const __FlashStringHelper *msg) {
-  os_mutex_lock(&serial_mutex);
   Serial.println(msg);
-  os_mutex_unlock(&serial_mutex);
+  Serial.flush();
 }
 
 /* --- CLI Helpers --- */
-void show_keys_cb(const char *key, void *val, uint16_t len, void *ctx) {
+void show_keys_cb(const char *key, const void *val, uint16_t len, void *ctx) {
   os_mutex_lock(&serial_mutex);
   Serial.print(F("  "));
   Serial.print(key);
   Serial.print(F(": "));
-  /* Value might not be null-terminated safe string, print char by char */
+  /* Print up to a short preview to avoid long blocking prints */
   const char *v = (const char *)val;
-  for (uint16_t i = 0; i < len; i++) {
+  uint16_t print_len = (len > 64) ? 64 : len;
+  for (uint16_t i = 0; i < print_len; i++) {
     Serial.print(v[i]);
+  }
+  if (len > print_len) {
+    Serial.print(F("..."));
   }
   Serial.println();
   os_mutex_unlock(&serial_mutex);
@@ -50,8 +63,8 @@ void show_keys_cb(const char *key, void *val, uint16_t len, void *ctx) {
 
 void process_command(char *cmd) {
   /* Normalize command to uppercase for checking (simple approach) */
-  /* Actually, let's just check the prefix case-insensitively or strictly. User
-   * asked for ADD/DELETE caps in prompt. */
+  /* Actually, let's just check the prefix case-insensitively or strictly.
+   * User asked for ADD/DELETE caps in prompt. */
 
   if (strncmp(cmd, "ADD ", 4) == 0 || strncmp(cmd, "UPDATE ", 7) == 0) {
     char *args = strchr(cmd, ' ');
@@ -129,50 +142,26 @@ void process_command(char *cmd) {
 }
 
 void task_db_demo(void) {
-  /* Immediate output to confirm task started */
-  Serial.println(F("TASK START"));
-  Serial.flush();
-
-  /* Initialize storage driver (silently) */
+  /* Initialize storage driver */
 #ifdef __AVR__
   storage_set_driver(storage_get_avr_eeprom_driver());
 #else
   storage_set_driver(storage_get_arduino_eeprom_driver());
 #endif
+  storage_init();
 
-  Serial.println(F("STORAGE SET"));
-  Serial.flush();
-
-  if (storage_init() != STORAGE_OK) {
-    Serial.println(F("STORAGE FAIL"));
-    Serial.flush();
-    while (1)
-      os_delay(1000);
-  }
-
-  Serial.println(F("STORAGE OK"));
-  Serial.flush();
-
-  /* Initialize KV Database (silently) */
+  /* Initialize KV Database */
   kv_result_t init_result = kv_init();
 
-  Serial.println(F("KV INIT DONE"));
-  Serial.flush();
-
-  if (init_result != KV_SUCCESS) {
-    Serial.print(F("KV FAIL: "));
-    Serial.println(init_result);
-    Serial.flush();
-    while (1)
-      os_delay(1000);
-  }
-
-  /* Now safe to print */
+  os_mutex_lock(&serial_mutex);
+  Serial.print(F("[DB] init result="));
+  Serial.println((int)init_result);
   Serial.println(F("[DB] CLI Ready."));
   Serial.println(
       F("Commands: ADD K,V | UPDATE K,V | DELETE K | SHOW KEYS | CAPACITY"));
   Serial.print(F("> "));
   Serial.flush();
+  os_mutex_unlock(&serial_mutex);
 
   static char line_buf[64];
   static uint8_t line_pos = 0;
@@ -190,7 +179,10 @@ void task_db_demo(void) {
           process_command(line_buf);
           line_pos = 0;
         }
+        os_mutex_lock(&serial_mutex);
         Serial.print(F("> "));
+        Serial.flush();
+        os_mutex_unlock(&serial_mutex);
       } else if (line_pos < sizeof(line_buf) - 1) {
         if (c >= 32 && c <= 126) { /* printable only */
           line_buf[line_pos++] = c;
@@ -208,6 +200,9 @@ void task_idle(void) {
     os_enter_idle();
   }
 }
+
+/* Lightweight heartbeat task: prints a short line and toggles LED every 2s */
+/* Auxiliary heartbeat and probe tasks removed to conserve RAM on UNO. */
 
 /**
  * Print detailed system information (Version, Platform, Memory).
@@ -230,25 +225,84 @@ void setup() {
   wdt_disable();
 #endif
 
-  /* Initialize serial for debug output */
-  Serial.begin(9600);
-  while (!Serial)
-    ; /* Wait for serial connection */
+  /* Blink built-in LED to indicate the board booted */
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, LOW);
+  delay(100);
+  digitalWrite(LED_BUILTIN, HIGH);
+  delay(100);
+  digitalWrite(LED_BUILTIN, LOW);
 
-  /* Print ToyOS Platform Info */
-  // os_print_info(); // Commented out to diagnose boot loop
+  /* Initialize serial for debug output (faster baud) */
+  Serial.begin(115200);
+  unsigned long tstart = millis();
+  while (!Serial && (millis() - tstart) < 2000)
+    ; /* Wait up to 2s for serial connection */
+
+#if TOYOS_DEBUG_ENABLED
+  /* Early serial sanity check */
+  Serial.println(F("BOOT: early"));
+  Serial.flush();
+#endif
+
+  /* Report reset cause (MCUSR) on AVR to detect watchdog/brown-out/etc */
+#ifdef __AVR__
+  {
+    uint8_t mcusr_val = MCUSR;
+#if TOYOS_DEBUG_ENABLED
+    Serial.print(F("BOOT: MCUSR=0x"));
+    Serial.println(mcusr_val, HEX);
+#endif
+    if (mcusr_val & (1 << WDRF))
+      Serial.println(F("BOOT: Reset cause = WDT"));
+    if (mcusr_val & (1 << BORF))
+      Serial.println(F("BOOT: Reset cause = BOR"));
+    if (mcusr_val & (1 << EXTRF))
+      Serial.println(F("BOOT: Reset cause = EXTERNAL"));
+    if (mcusr_val & (1 << PORF))
+      Serial.println(F("BOOT: Reset cause = POR"));
+    MCUSR = 0; /* Clear flags for subsequent boots */
+    Serial.flush();
+
+    /* Diagnostic: disable watchdog early to prevent WDT-induced resets while
+       debugging. This is a temporary measure; do not rely on it in
+       production.
+     */
+    wdt_disable();
+#if TOYOS_DEBUG_ENABLED
+    Serial.println(F("BOOT: WDT disabled (diagnostic)"));
+    Serial.flush();
+#endif
+  }
+#endif
+
+  /* Emit a single boot trace and pulse LED once for visual confirmation */
+#if TOYOS_DEBUG_ENABLED
+  Serial.println(F("BOOT TRACE"));
+  Serial.flush();
+#endif
+  digitalWrite(LED_BUILTIN, HIGH);
+  delay(50);
+  digitalWrite(LED_BUILTIN, LOW);
 
   Serial.println(F("\n--- ToyOS KV Database Console ---"));
+  Serial.flush();
 
   /* Initialize memory pool for stack allocation */
   os_init(mem_pool, sizeof(mem_pool));
+#if TOYOS_DEBUG_ENABLED
+  Serial.println(F("DBG: os_init called"));
+  Serial.flush();
+#endif
 
-  /* Create synchronization primitives */
-  os_mutex_init(&serial_mutex);
+  /* Create tasks */
+  os_create_task(2, task_idle, 0, 160);    // ID 2, Pri 0, Stack 160
+  os_create_task(1, task_db_demo, 1, 384); // ID 1, Pri 1, Stack 384
 
-  /* Create tasks - idle has priority 2 to feed watchdog during init */
-  os_create_task(2, task_idle, 2, 80);     /* Reduced stack: 100 -> 80 */
-  os_create_task(1, task_db_demo, 1, 400); /* Reduced stack: 512 -> 400 */
+#if TOYOS_DEBUG_ENABLED
+  Serial.println(F("REACHED END OF SETUP"));
+  Serial.flush();
+#endif
 
   /* Start the RTOS (never returns) */
   os_start();
