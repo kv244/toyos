@@ -170,28 +170,10 @@ void k_init(uint8_t *mem_pool, uint16_t mem_size) {
 
 void k_start(void) {
   if (kernel.task_count > 0) {
-#if TOYOS_DEBUG_ENABLED
-    Serial.println(F("DBG: k_start scheduler"));
-    Serial.flush();
-#endif
-    /* Pick the first task to run */
     os_scheduler();
-
     if (kernel.current_task != NULL) {
-#if TOYOS_DEBUG_ENABLED
-      Serial.print(F("DBG: k_start jump to id="));
-      Serial.println(kernel.current_task->id);
-      Serial.flush();
-#endif
-    } else {
-      Serial.println(F("FATAL: no task selected"));
-      Serial.flush();
-      while (1)
-        ;
+      port_start_first_task((uint8_t *)kernel.current_task->stack_ptr);
     }
-
-    port_timer_init();
-    port_start_first_task((uint8_t *)kernel.current_task->stack_ptr);
   }
 }
 
@@ -209,23 +191,8 @@ void k_create_task(uint8_t id, void (*task_func)(void), uint8_t priority,
 
   void *stack_mem = k_malloc(stack_size);
   if (stack_mem == NULL) {
-#if TOYOS_DEBUG_ENABLED
-    Serial.print(F("FAIL: malloc task "));
-    Serial.println(id);
-    Serial.flush();
-#endif
     return;
   }
-
-#if TOYOS_DEBUG_ENABLED
-  Serial.print(F(" OK: malloc task "));
-  Serial.print(id);
-  Serial.print(F(" addr=0x"));
-  Serial.print((uint16_t)stack_mem, HEX);
-  Serial.print(F(" func=0x"));
-  Serial.println((uint16_t)(uintptr_t)task_func, HEX);
-  Serial.flush();
-#endif
 
   uint32_t *canary_ptr = (uint32_t *)stack_mem;
   *canary_ptr = 0xDEADBEEF;
@@ -251,7 +218,12 @@ void k_create_task(uint8_t id, void (*task_func)(void), uint8_t priority,
   port_exit_critical();
 }
 
-void k_yield(void) { port_context_switch(); }
+extern "C" void os_update_ticks(void);
+
+void k_yield(void) {
+  os_update_ticks();
+  port_context_switch();
+}
 
 /* Optimized Scheduler (Hot Path) */
 TOYOS_HOT void os_scheduler(void) {
@@ -300,7 +272,9 @@ TOYOS_HOT void os_system_tick(void) {
         kernel.blocked_queue.tail = NULL;
 
       waking->task.state = TASK_READY;
-      heap_push(waking);
+      if (waking != kernel.current_node) {
+        heap_push(waking);
+      }
     }
   }
 }
@@ -333,7 +307,13 @@ void k_delay(uint16_t ticks) {
     }
   }
   port_exit_critical();
-  k_yield();
+
+  /* Cooperative spin: yield repeatedly until we are unblocked.
+     os_update_ticks (called inside port_context_switch) will
+     decrement delta_ticks and move us back to READY state. */
+  while (kernel.current_task->state == TASK_BLOCKED) {
+    k_yield();
+  }
 }
 
 void *k_malloc(size_t size) {

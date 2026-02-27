@@ -294,11 +294,7 @@
  * Default: 1 on ARM, 0 on AVR
  */
 #ifndef TOYOS_USE_MPU
-#if defined(__ARM_ARCH) && !defined(__AVR__)
-#define TOYOS_USE_MPU 1
-#else
 #define TOYOS_USE_MPU 0
-#endif
 #endif
 
 /**

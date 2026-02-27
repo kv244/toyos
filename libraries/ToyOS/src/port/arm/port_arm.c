@@ -1,359 +1,226 @@
 /**
- * ToyOS Portability Layer - ARM Cortex-M Implementation
+ * ToyOS ARM Cortex-M4 Port (Arduino Uno R4 / Renesas RA4M1)
+ *
+ * IMPORTANT: The Renesas FSP (FreeRTOS port) defines non-weak SVC_Handler
+ * AND PendSV_Handler. We CANNOT override them. Therefore this port uses:
+ *   - Cooperative context switching via direct register save/restore
+ *   - Arduino millis() for time tracking (no SysTick override)
+ *   - No PendSV, no SVC
  */
 
-/* Guard entire file based on architecture to prevent compilation on AVR */
-#if defined(__arm__) || defined(__ARM_ARCH) ||                                 \
-    defined(ARDUINO_ARCH_RENESAS) || defined(__ARM_ARCH_7M__) ||               \
-    defined(__ARM_ARCH_7EM__) || defined(__ARM_ARCH_6M__) ||                   \
-    defined(__ARM_ARCH_8M_MAIN__) || defined(__ARM_ARCH_8M_BASE__)
+#if defined(__arm__) || defined(__ARM_ARCH) || defined(ARDUINO_ARCH_RENESAS)
 
-#include "port_arm.h"
-#include "../../port.h"
-#include "../../toyos.h"        /* For TaskControlBlock */
-#include "../../toyos_config.h" /* For TOYOS_USE_MPU */
-
-#if TOYOS_USE_MPU
-#include "port_arm_mpu.h"
-#endif
-
-#ifdef ARDUINO
-#include <Arduino.h>
-#else
 #include <stdbool.h>
 #include <stdint.h>
 
+#ifdef ARDUINO
+#include <Arduino.h>
 #endif
 
-#if defined(__arm__) || defined(__ARM_ARCH) || defined(ARDUINO_ARCH_RENESAS)
-#define PORT_PLATFORM_ARM_CORTEX_M 1
-#endif
+#include "../../port.h"
+#include "../../toyos.h"
+#include "../../toyos_config.h"
 
-#ifdef PORT_PLATFORM_ARM_CORTEX_M
-
-/* Global pointer to current task (defined inos_kernel_fixed.cpp) */
+/* -----------------------------------------------------------------------
+ * Globals
+ * --------------------------------------------------------------------- */
 extern volatile TaskControlBlock *os_current_task_ptr;
-
-/* Scheduler entry point */
+extern void os_system_tick(void);
 extern void os_scheduler(void);
 
-/* Interrupt nesting counter */
 volatile uint32_t critical_nesting = 0;
 
-/* Exception Frame Layout (Pushed by Hardware) */
-typedef struct {
-  uint32_t r0;
-  uint32_t r1;
-  uint32_t r2;
-  uint32_t r3;
-  uint32_t r12;
-  uint32_t lr;
-  uint32_t pc;
-  uint32_t xpsr;
-} hw_stack_frame_t;
+/* FPU lazy stacking control */
+#define FPU_FPCCR (*((volatile uint32_t *)0xE000EF34u))
+#define LSPEN_BIT (1UL << 30)
+#define ASPEN_BIT (1UL << 31)
 
-/* Software Context Layout (Pushed by PendSV) */
-typedef struct {
-  uint32_t r4;
-  uint32_t r5;
-  uint32_t r6;
-  uint32_t r7;
-  uint32_t r8;
-  uint32_t r9;
-  uint32_t r10;
-  uint32_t r11;
-} sw_stack_frame_t;
+/* Track last tick time for polling-based tick */
+static volatile uint32_t last_tick_ms = 0;
 
-#define xPSR_T_BIT (1UL << 24)
+/* -----------------------------------------------------------------------
+ * Stack frame for cooperative context switch
+ *
+ * When a task yields, we push R4-R11 and LR onto its PSP stack.
+ * That's 9 words = 36 bytes. No HW frame needed.
+ * --------------------------------------------------------------------- */
 
-/**
- * Initialize stack for a new task.
- */
+#define COOP_FRAME_WORDS 9 /* R4-R11 + LR */
+
+/* -----------------------------------------------------------------------
+ * port_init_stack
+ *
+ * Set up initial stack so that when port_context_switch restores it,
+ * the task function starts executing.
+ *
+ * Layout (grows down):
+ *   [stack_top]
+ *     LR = task_func   <- when restored, "return" jumps here
+ *     R11 = 0
+ *     R10 = 0
+ *     R9  = 0
+ *     R8  = 0
+ *     R7  = 0
+ *     R6  = 0
+ *     R5  = 0
+ *     R4  = 0
+ *   [stack_ptr in TCB]
+ * --------------------------------------------------------------------- */
 uint8_t *port_init_stack(uint8_t *stack_top, uint16_t stack_size,
                          void (*task_func)(void)) {
-  /* ARM stack grows down. stack_top points to the highest valid address + 1?
-     Usually user passes array end.
-     Ensure 8-byte alignment.
-  */
-  uintptr_t addr = (uintptr_t)stack_top;
-  addr &= ~0x7; /* Alien to 8 bytes */
-  uint8_t *stk = (uint8_t *)addr;
+  (void)stack_size;
 
-  /* Reserve space for Hardware Stack Frame */
-  stk -= sizeof(hw_stack_frame_t);
-  hw_stack_frame_t *hw_frame = (hw_stack_frame_t *)stk;
+  /* Align to 8 bytes */
+  uintptr_t addr = ((uintptr_t)stack_top) & ~0x7u;
+  uint32_t *stk = (uint32_t *)addr;
 
-  hw_frame->r0 = 0;
-  hw_frame->r1 = 0;
-  hw_frame->r2 = 0;
-  hw_frame->r3 = 0;
-  hw_frame->r12 = 0;
-  hw_frame->lr =
-      0xFFFFFFFF; /* Return to invalid address (trap) if task returns */
-  hw_frame->pc = (uint32_t)task_func; /* Task Entry Point */
-  hw_frame->xpsr = xPSR_T_BIT;        /* EPSR Thumb bit must be set! */
+  /* Push LR (return address = task entry point) */
+  *(--stk) = (uint32_t)task_func;
 
-  /* Reserve space for Software Stack Frame (R4-R11) */
-  stk -= sizeof(sw_stack_frame_t);
-  /* No need to initialize R4-R11, but useful for debug */
+  /* Push R11 down to R4 (8 registers, all zero) */
+  for (int i = 0; i < 8; i++) {
+    *(--stk) = 0;
+  }
 
-  return stk;
+  /* Push dummy word (mapped to R0 in pop {r0, r4-r11, lr}) */
+  *(--stk) = 0;
+
+  return (uint8_t *)stk;
 }
 
-/**
- * Start First Task
- */
-/**
- * Start First Task
- * Triggers SVC to switch to handler mode and restore first context.
- */
-void port_start_first_task(uint8_t *task_stack_ptr) {
-  (void)task_stack_ptr;
-  __asm volatile(" cpsie i \n" /* Enable interrupts globally */
-                 " svc 0 \n"   /* Supervisor Call to restore context */
-                 " nop \n");
-  while (1)
-    ; /* Should not be reached */
-}
-
-/**
- * Context Switch (Trigger PendSV)
- */
-void port_context_switch(void) {
-  /* Set PendSV to pending */
-  /* SCB_ICSR = PENDSVSET_Msk */
-  /* 0xE000ED04 |= (1 << 28) */
-  (*(volatile uint32_t *)0xE000ED04) = (1UL << 28);
-
-  /* Ensure memory ops completed */
-  __asm volatile("dsb");
-  __asm volatile("isb");
-}
-
-/**
- * PendSV Handler - The actual context switch
- */
-__attribute__((naked)) void PendSV_Handler(void) {
+/* -----------------------------------------------------------------------
+ * port_context_switch  (naked)
+ *
+ * Cooperative context switch. Called from k_yield().
+ * Saves R4-R11 + LR onto current PSP, stores PSP into TCB.
+ * Calls os_scheduler to pick next task.
+ * Loads next task's PSP, restores R4-R11 + LR, returns.
+ *
+ * When returning, we "return" into the next task's yield point
+ * (or into the task_func for a freshly created task).
+ * --------------------------------------------------------------------- */
+__attribute__((naked)) void port_context_switch(void) {
   __asm volatile(
-      "mrs r0, psp \n"
-      "isb \n"
+      /* Save current context onto PSP */
+      "push  {r0, r4-r11, lr} \n" /* Save callee-saved regs + LR + dummy (R0)
+                                     for alignment */
 
-      /* Save Context */
-      "stmdb r0!, {r4-r11} \n" // Save R4-R11
+      /* Store current SP into TCB->stack_ptr */
+      "ldr   r2, =os_current_task_ptr \n"
+      "ldr   r1, [r2]         \n" /* r1 = &TCB */
+      "mov   r0, sp           \n"
+      "str   r0, [r1]         \n" /* TCB->stack_ptr = SP */
 
-      /* Save SP to TCB */
-      "ldr r2, =os_current_task_ptr \n"
-      "ldr r1, [r2] \n"
-      "str r0, [r1] \n"
+      /* Call scheduler to select next task */
+      "bl    os_scheduler     \n"
 
-      /* Save LR (EXC_RETURN) on stack? No need unless we call C func */
-      "push {r14} \n"
+      /* Restore new task's context */
+      "ldr   r2, =os_current_task_ptr \n"
+      "ldr   r1, [r2]         \n" /* r1 = &new TCB */
+      "ldr   r0, [r1]         \n" /* r0 = new TCB->stack_ptr */
+      "mov   sp, r0           \n" /* Restore SP */
 
-      /* Select Next Task */
-      "bl os_scheduler \n"
-
-#if TOYOS_USE_MPU
-      "ldr r0, =os_current_task_ptr \n"
-      "ldr r0, [r0] \n"
-      "bl port_mpu_reconfigure \n"
-#endif
-
-      "pop {r14} \n"
-
-      /* Restore Context */
-      "ldr r2, =os_current_task_ptr \n"
-      "ldr r1, [r2] \n"
-      "ldr r0, [r1] \n" // psp = stack_ptr
-
-      "ldmia r0!, {r4-r11} \n" // Restore R4-R11
-      "msr psp, r0 \n"
-      "isb \n"
-
-      "bx r14 \n"
-      ".align 4 \n");
+      "pop   {r0, r4-r11, lr} \n" /* Restore callee-saved regs + LR + dummy (R0)
+                                   */
+      "bx    lr               \n" /* "Return" into next task */
+      ::
+          : "memory");
 }
 
-/**
- * Timer Setup (SysTick)
- */
+/* -----------------------------------------------------------------------
+ * port_timer_init
+ *
+ * We do NOT override SysTick (the FSP owns it for FreeRTOS).
+ * Instead we use a polling approach: check millis() in os_update_ticks().
+ * --------------------------------------------------------------------- */
 void port_timer_init(void) {
-  /* Arduino init() usually enables SysTick for millis().
-     We can hook SysTick or use a different timer.
-     Better to hook SysTick if possible?
-     Compiling for Arduino, the core defines SysTick_Handler!
-     Collision!
+  /* Disable lazy FP stacking */
+  FPU_FPCCR &= ~(ASPEN_BIT | LSPEN_BIT);
 
-     Solution: define os_systick_hook() and call it from the core's handler?
-     Or use `yield()`?
-
-     ToyOS expects to OWN the tick handler.
-     If running on top of Arduino Core, we might break `millis()`.
-
-     Alternative: `port_get_tick` uses `millis()`. `port_context_switch` is
-     manual. Preemption requires an interrupt.
-
-     On R4, we can override SysTick_Handler if it's weak?
-     Usually it is.
-     If we override it, we must increment Arduino tick manually if we want
-     `millis` to work.
-
-     Let's assume we own SysTick for now.
-  */
-
-  /* Configure SysTick to interrupt at OS_TICK_RATE_HZ (1kHz) */
-  /* SystemCoreClock is standard CMSIS variable */
-  /* SysTick_Config(SystemCoreClock / 1000); */
-
-  /* On Arduino R4, F_CPU is defined. */
-  /* But we want to avoid conflict. Assuming users accept "ToyOS takes over". */
-
-  SysTick_Config(F_CPU / 1000);
-  NVIC_SetPriority(SysTick_IRQn, 15); /* Lowest priority */
-  NVIC_SetPriority(PendSV_IRQn, 15);  /* Lowest priority for PendSV too */
+  /* Record starting time */
+  last_tick_ms = millis();
 }
 
-void SysTick_Handler(void) {
-  /* Call OS Tick processing */
-  os_system_tick();
+/* -----------------------------------------------------------------------
+ * os_update_ticks (called before scheduling decisions)
+ *
+ * Polls millis() and calls os_system_tick() for each ms elapsed.
+ * --------------------------------------------------------------------- */
+void os_update_ticks(void) {
+  uint32_t now = millis();
+  if (last_tick_ms >= now)
+    return;
 
-  /* Trigger potential context switch via PendSV */
-  port_context_switch();
+  uint32_t saved_primask;
+  __asm volatile("mrs %0, primask; cpsid i" : "=r"(saved_primask)::"memory");
+
+  while (last_tick_ms < now) {
+    last_tick_ms++;
+    os_system_tick();
+  }
+
+  __asm volatile("msr primask, %0" ::"r"(saved_primask) : "memory");
 }
 
-/* Optional: Increment Arduino millis counter if we stole the vector?
-   On R4, generic clock usually handles millis? No, SysTick.
-   If we steal it, `delay()` inside Arduino libs might break.
-   Ideally we call invalid global?
-*/
+/* -----------------------------------------------------------------------
+ * port_start_first_task
+ *
+ * Switch to PSP, start timer, load first task's context and "return" to it.
+ * --------------------------------------------------------------------- */
+void port_start_first_task(uint8_t *task_stack_ptr) {
+  FPU_FPCCR &= ~(ASPEN_BIT | LSPEN_BIT);
 
-/* SVC Handler - Main Entry Point */
-__attribute__((naked)) void SVC_Handler(void) {
-  __asm volatile("tst lr, #4 \n" // Check bit 4 of EXC_RETURN (0=MSP, 1=PSP)
-                 "ite eq \n"
-                 "mrseq r0, msp \n"         // r0 = MSP
-                 "mrsne r0, psp \n"         // r0 = PSP (usually this for tasks)
-                 "b os_svc_dispatch_asm \n" // Jump to C dispatcher
-  );
-}
+  /* Set PSP and switch to it */
+  __asm volatile("msr psp, %0" ::"r"(task_stack_ptr) : "memory");
+  __asm volatile("mov r0, #2; msr control, r0; isb" ::: "r0", "memory");
 
-/* Restore Context for SVC #0 */
-__attribute__((naked)) void port_svc_restore_context(void) {
-  __asm volatile("ldr r0, =os_current_task_ptr \n"
-                 "ldr r1, [r0] \n"
-                 "ldr r0, [r1] \n" /* r0 = stack_ptr from TCB */
+  port_timer_init();
 
-                 "ldmia r0!, {r4-r11} \n" /* Pop SW context (R4-R11) */
-                 "msr psp, r0 \n"         /* Set PSP to current SP */
-#if TOYOS_USE_MPU
-                 "mov r0, #3 \n" /* Set CONTROL: Use PSP, Unprivileged Thread */
-#else
-                 "mov r0, #2 \n" /* Set CONTROL: Use PSP, Privileged Thread */
-#endif
-                 "msr control, r0 \n"
-                 "isb \n"
+  /* Load the task's initial stack into SP and pop context */
+  __asm volatile(
+      "mov   sp, %0           \n"
+      "pop   {r0, r4-r11, lr} \n" /* r0=dummy, r4-r11=context, LR=entry */
+      "cpsie i                \n"
+      "cpsie f                \n"
+      "bx    lr               \n" /* Jump to task_func */
+      ::"r"(task_stack_ptr)
+      : "memory");
 
-                 "orr r14, #0xd \n" /* Force EXC_RETURN to Thread Mode, PSP */
-                 "bx r14 \n" /* Returns -> pops HW frame from PSP -> Task PC */
-                 ".align 4 \n");
-}
-
-/* C Dispatcher called from SVC_Handler */
-void os_svc_dispatch_asm(uint32_t *stack_frame) {
-  /* Stack frame[6] is PC. SVC instruction is at PC-2. */
-  uint8_t svc_number = ((uint8_t *)stack_frame[6])[-2];
-
-  if (svc_number == 0) {
-    /* Restore First Task */
-    port_svc_restore_context();
-  } else {
-    /* System Call Dispatch */
-    extern uint32_t os_kernel_syscall(uint8_t id, uint32_t arg0, uint32_t arg1,
-                                      uint32_t arg2, uint32_t arg3);
-
-    /* Return value overrides R0 in the stack frame */
-    stack_frame[0] =
-        os_kernel_syscall(svc_number, stack_frame[0], stack_frame[1],
-                          stack_frame[2], stack_frame[3]);
+  while (1) {
   }
 }
 
-/* Platform Info */
-/* Platform Info */
-const char *port_get_platform_name(void) { return "ARM Cortex-M4 (Renesas)"; }
-
+/* -----------------------------------------------------------------------
+ * Platform info
+ * --------------------------------------------------------------------- */
+const char *port_get_platform_name(void) {
+  return "ARM Cortex-M4 (Renesas RA4M1)";
+}
 const char *port_get_mcu_name(void) { return "RA4M1"; }
 
 uint32_t port_get_cpu_freq(void) {
 #ifdef F_CPU
-  return F_CPU;
+  return (uint32_t)F_CPU;
 #else
   return 48000000UL;
 #endif
 }
 
-uint32_t port_get_flash_size(void) { return 256 * 1024; /* 256KB */ }
+uint32_t port_get_flash_size(void) { return 256u * 1024u; }
+uint32_t port_get_sram_size(void) { return 32u * 1024u; }
+uint32_t port_get_eeprom_size(void) { return 8u * 1024u; }
 
-uint32_t port_get_sram_size(void) { return 32 * 1024; /* 32KB */ }
+uint32_t port_get_tick(void) { return (uint32_t)millis(); }
 
-uint32_t port_get_eeprom_size(void) {
-  return 8 * 1024; /* 8KB Data Flash acts as EEPROM */
-}
-
-/* Atomic and Critical Section functions are now inlined in port.h via
- * cpu_port.h */
-
-/* Ticks */
-uint32_t port_get_tick(void) {
-  /* os_system_tick returns count? No, os_system_tick updates kernel state.
-     We need access to kernel.system_tick?
-     Or rely on SysTick->VAL?
-
-     ToyOS generic `os_get_time()` usually returns `kernel.system_tick`.
-     `port_get_tick` is usually hard to implement without kernel internals.
-
-     Wait, `port.h` defines `port_get_tick`.
-     If we use `kernel.system_tick` (exposed via `os_get_time`?), we don't need
-     port impl? Ah, `toyos.h` says `port_get_tick()` returns milliseconds.
-
-     Let's use the Arduino `millis()` as fallback if we didn't hook SysTick
-     perfectly? No, let's return `os_get_time()` from kernel? But that's
-     circular.
-
-     Let's assume `extern volatile uint32_t system_tick` from kernel?
-     Actually, `port_get_tick` is intended to simply return the SysTick counter
-     or global variable.
-
-     Let's leave it as returning `ms` derived from kernel.
-     Wait, `os_kernel_fixed.cpp` manages `kernel.system_tick`.
-     `port.h` interface requires `port_get_tick`.
-
-     I'll implement it as:
-     return (uint32_t)os_get_time();
-
-  */
-  extern uint32_t os_get_time(void);
-  return os_get_time();
-}
-
-/* Power & WDT */
-
-void port_wdt_init(uint16_t timeout_ms) {
-  (void)timeout_ms;
-  /* Stub: Implement R4 WDT init here */
-}
-
-void port_wdt_feed(void) { /* Stub: Implement R4 WDT feed here */ }
-
-void port_wdt_disable(void) { /* Stub */ }
+void port_wdt_init(uint16_t timeout_ms) { (void)timeout_ms; }
+void port_wdt_feed(void) {}
+void port_wdt_disable(void) {}
 
 uint8_t *port_fast_zero_stack(uint8_t *sp, uint8_t count) {
-  /* Fallback C implementation or optimized assembly */
   while (count--) {
     *(--sp) = 0;
   }
   return sp;
 }
 
-#endif /* PORT_PLATFORM_ARM_CORTEX_M */
-
-#endif /* __ARM_ARCH... */
+#endif /* ARM */
