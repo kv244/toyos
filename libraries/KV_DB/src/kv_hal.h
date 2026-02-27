@@ -89,9 +89,15 @@ static inline void kv_hal_unlock(kv_lock_t *lock) { os_mutex_unlock(lock); }
 #define RA4M1_MSTPCRC_BIT 19
 
 static inline void kv_hal_crc_init(void) {
-  /* Enable CRC clock: MSTPCRC bit 19 = 0 to enable */
+  /* RA4M1 PRCR (Protect Register) unlock: bit 1 (PRC1) for Low Power regs */
+  volatile uint16_t *prcr = (volatile uint16_t *)0x4001E01E;
+  *prcr = 0xA502; // Unlock MSTP regs
+
+  /* Enable CRC clock: MSTPCRA bit 19 = 0 to enable */
   volatile uint32_t *mstpcra = (volatile uint32_t *)RA4M1_MSTPCRC_ADDR;
   *mstpcra &= ~(1UL << RA4M1_MSTPCRC_BIT);
+
+  *prcr = 0xA500; // Lock back
 
   /* Configure CRC: 32-bit, Ethernet polynomial usually */
   /* CRCCR: bit 7: clear, bits 1-0: 11 for CRC-32 */

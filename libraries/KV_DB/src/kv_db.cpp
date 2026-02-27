@@ -5,6 +5,10 @@
 #include <string.h>
 #include <toyos.h>
 
+#if defined(ARDUINO)
+#include <Arduino.h>
+#endif
+
 /**
  * ToyOS KV Database Implementation (LFS + Wear Leveling + ARM Cache)
  */
@@ -188,7 +192,7 @@ kv_result_t kv_init(void) {
 
         /* Move to next record */
         offset += sizeof(KVRecord) + rec.key_len + rec.val_len;
-        os_wdt_feed(); // Feed watchdog during long initialization
+        os_wdt_feed();
       }
     }
   }
