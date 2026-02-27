@@ -16,34 +16,6 @@
 #define TOYOS_MAX_TASKS 4
 #endif
 
-#if TOYOS_USE_MPU && (defined(__ARM_ARCH_7M__) || defined(__ARM_ARCH_7EM__))
-#include "port/arm/port_arm_mpu.h"
-#define TOYOS_USE_SVC 1
-#else
-#define TOYOS_USE_SVC 0
-#endif
-
-/* SYSCALL IDs */
-enum {
-  SVC_START = 0,
-  SVC_YIELD,
-  SVC_DELAY,
-  SVC_CREATE_TASK,
-  SVC_MALLOC,
-  SVC_FREE,
-  SVC_MUTEX_INIT,
-  SVC_MUTEX_LOCK,
-  SVC_MUTEX_UNLOCK,
-  SVC_SEM_INIT,
-  SVC_SEM_WAIT,
-  SVC_SEM_POST,
-  SVC_MQ_CREATE,
-  SVC_MQ_SEND,
-  SVC_MQ_RECEIVE,
-  SVC_GET_TIME,
-  SVC_PRINT
-};
-
 /* Static Task Pool */
 static TaskNode static_task_pool[MAX_TASKS];
 static TaskNode *task_pool = static_task_pool;
@@ -70,9 +42,6 @@ void k_mutex_unlock(Mutex *mutex);
 void k_sem_init(Semaphore *sem, uint8_t initial_count);
 void k_sem_wait(Semaphore *sem);
 void k_sem_post(Semaphore *sem);
-MessageQueue *k_mq_create(uint8_t capacity);
-void k_mq_send(MessageQueue *mq, void *msg);
-void *k_mq_receive(MessageQueue *mq);
 uint32_t k_get_time(void);
 }
 
@@ -521,245 +490,40 @@ void k_sem_post(Semaphore *s) {
   port_exit_critical();
 }
 #if TOYOS_ENABLE_MESSAGE_QUEUES
-MessageQueue *k_mq_create(uint8_t c) { return NULL; }
-void k_mq_send(MessageQueue *q, void *m) {}
-void *k_mq_receive(MessageQueue *q) { return NULL; }
+/* Message Queues currently not implemented in this port */
 #endif
 
 uint32_t k_get_time(void) { return kernel.system_tick; }
-
-/* --- SYSCALL DISPATCHER --- */
-
-#if TOYOS_USE_SVC
-extern "C" uint32_t os_kernel_syscall(uint8_t id, uint32_t a0, uint32_t a1,
-                                      uint32_t a2, uint32_t a3) {
-  uint32_t result = 0;
-  switch (id) {
-  case SVC_YIELD:
-    k_yield();
-    break;
-  case SVC_DELAY:
-    k_delay((uint16_t)a0);
-    break;
-  case SVC_CREATE_TASK:
-    k_create_task((uint8_t)a0, (void (*)(void))a1, (uint8_t)a2, (uint16_t)a3);
-    break;
-  case SVC_MALLOC:
-    result = (uint32_t)k_malloc((size_t)a0);
-    break;
-  case SVC_FREE:
-    k_free((void *)a0);
-    break;
-  case SVC_MUTEX_INIT:
-    k_mutex_init((Mutex *)a0);
-    break;
-  case SVC_MUTEX_LOCK:
-    k_mutex_lock((Mutex *)a0);
-    break;
-  case SVC_MUTEX_UNLOCK:
-    k_mutex_unlock((Mutex *)a0);
-    break;
-  case SVC_GET_TIME:
-    result = k_get_time();
-    break;
-  case SVC_PRINT:
-    Serial.println((const char *)a0);
-    break;
-#if TOYOS_ENABLE_MESSAGE_QUEUES
-  case SVC_MQ_CREATE:
-    result = (uint32_t)k_mq_create((uint8_t)a0);
-    break;
-  case SVC_MQ_SEND:
-    k_mq_send((MessageQueue *)a0, (void *)a1);
-    break;
-  case SVC_MQ_RECEIVE:
-    result = (uint32_t)k_mq_receive((MessageQueue *)a0);
-    break;
-#endif
-  default:
-    /* Unknown syscall */
-    break;
-  }
-  return result;
-}
-#endif
 
 /* --- PUBLIC API WRAPPERS --- */
 
 void os_init(uint8_t *pool, uint16_t size) { k_init(pool, size); }
 void os_start(void) { k_start(); }
 
-/* Wrapper Macro */
-#if TOYOS_USE_SVC
-#define SVC_0(id) __asm volatile("svc %0" : : "I"(id) : "memory")
-#define SVC_1(id, a0)                                                          \
-  register uint32_t r0 asm("r0") = (uint32_t)(a0);                             \
-  __asm volatile("svc %1" : "+r"(r0) : "I"(id) : "memory");                    \
-  return;
-#define SVC_1_RET(id, a0, ret_type)                                            \
-  register uint32_t r0 asm("r0") = (uint32_t)(a0);                             \
-  __asm volatile("svc %1" : "+r"(r0) : "I"(id) : "memory");                    \
-  return (ret_type)r0;
-#define SVC_2(id, a0, a1)                                                      \
-  register uint32_t r0 asm("r0") = (uint32_t)(a0);                             \
-  register uint32_t r1 asm("r1") = (uint32_t)(a1);                             \
-  __asm volatile("svc %2" : "+r"(r0), "+r"(r1) : "I"(id) : "memory");          \
-  return;
-#define SVC_2_RET(id, a0, a1, ret_type)                                        \
-  register uint32_t r0 asm("r0") = (uint32_t)(a0);                             \
-  register uint32_t r1 asm("r1") = (uint32_t)(a1);                             \
-  __asm volatile("svc %2" : "+r"(r0), "+r"(r1) : "I"(id) : "memory");          \
-  return (ret_type)r0;
-#else
-#define SVC_0(id)                  /* No-op */
-#define SVC_1(id, a0)              /* No-op */
-#define SVC_1_RET(id, a0, ret)     /* No-op */
-#define SVC_2(id, a0, a1)          /* No-op */
-#define SVC_2_RET(id, a0, a1, ret) /* No-op */
-#endif
-
-void os_yield(void) {
-#if TOYOS_USE_SVC
-  SVC_0(SVC_YIELD);
-#else
-  k_yield();
-#endif
-}
-
-void os_delay(uint16_t ticks) {
-#if TOYOS_USE_SVC
-  SVC_1(SVC_DELAY, ticks);
-#else
-  k_delay(ticks);
-#endif
-}
-
+void os_yield(void) { k_yield(); }
+void os_delay(uint16_t ticks) { k_delay(ticks); }
 void os_create_task(uint8_t id, void (*f)(void), uint8_t p, uint16_t s) {
-#if TOYOS_USE_SVC
-  register uint32_t r0 asm("r0") = id;
-  register uint32_t r1 asm("r1") = (uint32_t)f;
-  register uint32_t r2 asm("r2") = p;
-  register uint32_t r3 asm("r3") = s;
-  __asm volatile("svc %0"
-                 :
-                 : "I"(SVC_CREATE_TASK), "r"(r0), "r"(r1), "r"(r2), "r"(r3)
-                 : "memory");
-#else
   k_create_task(id, f, p, s);
-#endif
 }
-
-void *os_malloc(uint16_t size) {
-#if TOYOS_USE_SVC
-  SVC_1_RET(SVC_MALLOC, size, void *);
-#else
-  return k_malloc(size);
-#endif
-}
-
-void os_free(void *ptr) {
-#if TOYOS_USE_SVC
-  SVC_1(SVC_FREE, ptr);
-#else
-  k_free(ptr);
-#endif
-}
-
-void os_mutex_init(Mutex *m) {
-#if TOYOS_USE_SVC
-  SVC_1(SVC_MUTEX_INIT, m);
-#else
-  k_mutex_init(m);
-#endif
-}
-
-void os_mutex_lock(Mutex *m) {
-#if TOYOS_USE_SVC
-  SVC_1(SVC_MUTEX_LOCK, m);
-#else
-  k_mutex_lock(m);
-#endif
-}
-
-void os_mutex_unlock(Mutex *m) {
-#if TOYOS_USE_SVC
-  SVC_1(SVC_MUTEX_UNLOCK, m);
-#else
-  k_mutex_unlock(m);
-#endif
-}
+void *os_malloc(uint16_t size) { return k_malloc(size); }
+void os_free(void *p) { k_free(p); }
+void os_mutex_init(Mutex *m) { k_mutex_init(m); }
+void os_mutex_lock(Mutex *m) { k_mutex_lock(m); }
+void os_mutex_unlock(Mutex *m) { k_mutex_unlock(m); }
 
 /* Stubs for others */
 void os_sem_init(Semaphore *s, uint8_t c) { k_sem_init(s, c); }
 void os_sem_wait(Semaphore *s) { k_sem_wait(s); }
 void os_sem_post(Semaphore *s) { k_sem_post(s); }
-#if TOYOS_ENABLE_MESSAGE_QUEUES
-MessageQueue *os_mq_create(uint8_t c) {
-#if TOYOS_USE_SVC
-  SVC_1_RET(SVC_MQ_CREATE, c, MessageQueue *);
-#else
-  return k_mq_create(c);
-#endif
-}
-void os_mq_send(MessageQueue *q, void *m) {
-#if TOYOS_USE_SVC
-  SVC_2(SVC_MQ_SEND, q, m);
-#else
-  k_mq_send(q, m);
-#endif
-}
-void *os_mq_receive(MessageQueue *q) {
-#if TOYOS_USE_SVC
-  SVC_1_RET(SVC_MQ_RECEIVE, q, void *);
-#else
-  return k_mq_receive(q);
-#endif
-}
-#endif
 
 /* --- UTILITY FUNCTIONS --- */
 
-void os_enter_idle(void) {
-#if defined(__arm__)
-  __asm volatile("wfi");
-#elif defined(__AVR__)
-  cpu_idle();
-#endif
-}
+void os_enter_idle(void) { __asm volatile("wfi"); }
 
 void os_wdt_feed(void) { port_wdt_feed(); }
 
 void os_wdt_init(uint16_t timeout_ms) { port_wdt_init(timeout_ms); }
 
-void os_check_stack_overflow(void) {
-  /* Iterate tasks and check canaries */
-  /* Implementation omitted for brevity but required for linker */
-}
+void os_print(const char *msg) { Serial.println(msg); }
 
-void os_print(const char *msg) {
-#if TOYOS_USE_SVC
-  SVC_1(SVC_PRINT, msg);
-#else
-  Serial.println(msg);
-#endif
-}
-
-void os_print_p(const char *msg_p) {
-#ifdef __AVR__
-  Serial.println((const __FlashStringHelper *)msg_p);
-#else
-  os_print(msg_p);
-#endif
-}
-
-#ifdef __AVR__
-#include <avr/pgmspace.h>
-#endif
-
-void os_print_info(void) {
-  // Empty function as per instruction
-}
-
-void os_banner(void) {
-  // Empty function as per instruction
-}
+void os_print_p(const char *msg_p) { os_print(msg_p); }

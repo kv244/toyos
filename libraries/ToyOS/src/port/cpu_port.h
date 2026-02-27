@@ -16,89 +16,12 @@ extern "C" {
 #endif
 
 /* ========================================================================
- * AVR (ATmega328P) SECTION
- * ======================================================================== */
-#if defined(__AVR__)
-
-/* External state variables (defined in port_avr.c) */
-extern volatile uint8_t port_critical_nesting;
-extern volatile uint8_t port_saved_sreg;
-
-#include <avr/interrupt.h>
-#include <avr/io.h>
-#include <avr/sleep.h>
-#include <util/atomic.h>
-
-#define cpu_enable_interrupts() sei()
-#define cpu_disable_interrupts() cli()
-
-static inline void cpu_enter_critical(void) {
-  uint8_t sreg = SREG;
-  cli();
-  if (port_critical_nesting == 0) {
-    port_saved_sreg = sreg;
-  }
-  port_critical_nesting++;
-}
-
-static inline void cpu_exit_critical(void) {
-  port_critical_nesting--;
-  if (port_critical_nesting == 0) {
-    SREG = port_saved_sreg;
-  }
-}
-
-static inline void *cpu_get_sp(void) {
-  uint16_t sp = SPL | (SPH << 8);
-  return (void *)sp;
-}
-
-extern void port_context_switch(void);
-#define cpu_yield() port_context_switch()
-
-static inline void cpu_idle(void) {
-  set_sleep_mode(SLEEP_MODE_IDLE);
-  sleep_enable();
-  sei();
-  sleep_cpu();
-  sleep_disable();
-}
-
-#define cpu_nop() __asm__ __volatile__("nop")
-
-static inline uint8_t cpu_atomic_inc_u8(volatile uint8_t *ptr) {
-  uint8_t res;
-  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) { res = ++(*ptr); }
-  return res;
-}
-static inline uint8_t cpu_atomic_dec_u8(volatile uint8_t *ptr) {
-  uint8_t res;
-  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) { res = --(*ptr); }
-  return res;
-}
-static inline bool cpu_atomic_cas_u8(volatile uint8_t *ptr, uint8_t exp,
-                                     uint8_t des) {
-  bool success = false;
-  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-    if (*ptr == exp) {
-      *ptr = des;
-      success = true;
-    }
-  }
-  return success;
-}
-
-/* ========================================================================
  * ARM CORTEX-M SECTION
  * ======================================================================== */
-#elif defined(__arm__) || defined(__ARM_ARCH) || defined(ARDUINO_ARCH_RENESAS)
+#if defined(__arm__) || defined(__ARM_ARCH) || defined(ARDUINO_ARCH_RENESAS)
 
 /* External state variables (defined in port_arm.c) */
 extern volatile uint32_t critical_nesting;
-
-/* ARM Cortex-M System Control Block - Interrupt Control and State Register */
-#define SCB_ICSR_ADDR 0xE000ED04UL
-#define SCB_ICSR_PENDSVSET (1UL << 28)
 
 #include <Arduino.h>
 
@@ -119,18 +42,7 @@ static inline void cpu_exit_critical(void) {
   }
 }
 
-static inline void *cpu_get_sp(void) {
-  uint32_t sp;
-  __asm__ __volatile__("mrs %0, psp" : "=r"(sp));
-  return (void *)sp;
-}
-
-#define cpu_yield()                                                            \
-  do {                                                                         \
-    (*(volatile uint32_t *)SCB_ICSR_ADDR) = SCB_ICSR_PENDSVSET;                \
-    __asm volatile("dsb" ::: "memory");                                        \
-    __asm volatile("isb" ::: "memory");                                        \
-  } while (0)
+#define cpu_yield() port_context_switch()
 
 #define cpu_idle() __asm volatile("wfi")
 #define cpu_nop() __asm volatile("nop")
@@ -148,7 +60,7 @@ static inline bool cpu_atomic_cas_u8(volatile uint8_t *ptr, uint8_t exp,
 }
 
 #else
-#error "Unsupported Architecture"
+#error "Unsupported Architecture - ARM Cortex-M required"
 #endif
 
 #ifdef __cplusplus

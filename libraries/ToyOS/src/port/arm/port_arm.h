@@ -48,11 +48,6 @@ uint32_t port_get_sram_size(void);
 uint32_t port_get_eeprom_size(void);
 const char *port_get_mcu_name(void);
 
-/* Context Switching Helper */
-void PendSV_Handler(void);
-void SysTick_Handler(void);
-void SVC_Handler(void);
-
 #ifdef __cplusplus
 }
 #endif

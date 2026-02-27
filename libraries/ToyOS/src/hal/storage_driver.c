@@ -5,15 +5,12 @@
 #include "storage_driver.h"
 
 #include "storage_arduino_eeprom.h"
-#include "storage_avr_eeprom.h"
 
 /* Active driver pointer - defaults to NULL */
 const storage_driver_t *current_storage_driver = NULL;
 
 storage_result_t storage_bind_platform_driver(void) {
-#if defined(__AVR__)
-  current_storage_driver = storage_get_avr_eeprom_driver();
-#elif defined(ARDUINO_ARCH_RENESAS) || defined(ARDUINO_UNOR4_MINIMA) ||        \
+#if defined(ARDUINO_ARCH_RENESAS) || defined(ARDUINO_UNOR4_MINIMA) ||          \
     defined(ARDUINO_UNOR4_WIFI)
   current_storage_driver = storage_get_arduino_eeprom_driver();
 #else

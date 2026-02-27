@@ -207,19 +207,6 @@
 #define TOYOS_STACK_CANARY 0xDEADBEEF
 #endif
 
-/**
- * Enable automatic stack checking on every context switch.
- * If enabled, os_check_stack_overflow() is called automatically.
- *
- * Warning: Adds overhead to context switches (~10-20 cycles)
- * Recommended: Enable during development, disable in production
- *
- * Default: 0 (disabled)
- */
-#ifndef TOYOS_AUTO_STACK_CHECK
-#define TOYOS_AUTO_STACK_CHECK 0
-#endif
-
 /* ========================================================================
  * WATCHDOG CONFIGURATION
  * ======================================================================== */
@@ -236,17 +223,8 @@
 #define TOYOS_ENABLE_WATCHDOG 1
 #endif
 
-/**
- * Default watchdog timeout period.
- * Valid values: WDTO_15MS, WDTO_30MS, WDTO_60MS, WDTO_120MS,
- *               WDTO_250MS, WDTO_500MS, WDTO_1S, WDTO_2S,
- *               WDTO_4S, WDTO_8S
- *
- * Default: WDTO_4S (4 seconds)
- */
 #ifndef TOYOS_WATCHDOG_TIMEOUT
-#define WDTO_4S 8 // AVR watchdog constant
-#define TOYOS_WATCHDOG_TIMEOUT WDTO_4S
+#define TOYOS_WATCHDOG_TIMEOUT 4000
 #endif
 
 /* ========================================================================
@@ -270,45 +248,6 @@
  * MEMORY PROTECTION (ARM ONLY)
  * ======================================================================== */
 
-/**
- * Enable MPU-based memory protection (ARM Cortex-M only).
- * Provides hardware-enforced task isolation and stack protection.
- *
- * Features:
- * - Task stack isolation (prevents stack overflow corruption)
- * - Kernel data protection (user tasks cannot modify kernel structures)
- * - Heap protection with guard pages
- * - Immediate fault detection with precise error location
- *
- * Requirements:
- * - ARM Cortex-M with MPU (M3/M4/M7)
- * - Minimum 8 MPU regions
- *
- * Overhead:
- * - Code size: ~300 bytes
- * - Context switch: ~10-20 cycles
- * - Runtime: Zero (hardware enforcement)
- *
- * Note: Automatically disabled on AVR (no MPU hardware)
- *
- * Default: 1 on ARM, 0 on AVR
- */
-#ifndef TOYOS_USE_MPU
-#define TOYOS_USE_MPU 0
-#endif
-
-/**
- * Enable runtime statistics collection.
- * Tracks task execution time, context switches, etc.
- *
- * Warning: Adds memory and CPU overhead
- *
- * Default: 0 (disabled)
- */
-#ifndef TOYOS_ENABLE_STATS
-#define TOYOS_ENABLE_STATS 0
-#endif
-
 /* ========================================================================
  * FEATURE TOGGLES
  * ======================================================================== */
@@ -324,31 +263,6 @@
  */
 #ifndef TOYOS_ENABLE_PRIORITY_INHERITANCE
 #define TOYOS_ENABLE_PRIORITY_INHERITANCE 0
-#endif
-
-/**
- * Enable message queues.
- * If disabled, message queue functions are not included,
- * saving flash memory.
- *
- * Default: 1 on ARM, 0 on AVR (saves ~500 bytes Flash)
- */
-#ifndef TOYOS_ENABLE_MESSAGE_QUEUES
-#if defined(__arm__) || defined(__ARM_ARCH)
-#define TOYOS_ENABLE_MESSAGE_QUEUES 1
-#else
-#define TOYOS_ENABLE_MESSAGE_QUEUES 0
-#endif
-#endif
-
-/**
- * Maximum message queue capacity.
- * Limits the size of message queues to prevent excessive memory use.
- *
- * Default: 16 messages
- */
-#ifndef TOYOS_MAX_QUEUE_CAPACITY
-#define TOYOS_MAX_QUEUE_CAPACITY 16
 #endif
 
 /* ========================================================================
@@ -372,27 +286,6 @@
     TOYOS_TIMER_PRESCALER != 64 && TOYOS_TIMER_PRESCALER != 256 &&             \
     TOYOS_TIMER_PRESCALER != 1024
 #error "Invalid TOYOS_TIMER_PRESCALER value"
-#endif
-
-/* Calculate Timer1 compare value based on configuration */
-#ifndef F_CPU
-#define F_CPU 16000000UL
-#endif
-
-#define TOYOS_TIMER_COMPARE_VALUE                                              \
-  ((F_CPU / TOYOS_TIMER_PRESCALER / TOYOS_TICK_RATE_HZ) - 1)
-
-/* Derive timer prescaler bits */
-#if TOYOS_TIMER_PRESCALER == 1
-#define TOYOS_TIMER_PRESCALER_BITS (1 << CS10)
-#elif TOYOS_TIMER_PRESCALER == 8
-#define TOYOS_TIMER_PRESCALER_BITS (1 << CS11)
-#elif TOYOS_TIMER_PRESCALER == 64
-#define TOYOS_TIMER_PRESCALER_BITS ((1 << CS11) | (1 << CS10))
-#elif TOYOS_TIMER_PRESCALER == 256
-#define TOYOS_TIMER_PRESCALER_BITS (1 << CS12)
-#elif TOYOS_TIMER_PRESCALER == 1024
-#define TOYOS_TIMER_PRESCALER_BITS ((1 << CS12) | (1 << CS10))
 #endif
 
 /* Tick conversion macros */

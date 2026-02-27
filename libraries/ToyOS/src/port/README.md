@@ -7,10 +7,6 @@ This directory contains the platform abstraction layer for ToyOS RTOS.
 ```
 port/
 ├── cpu_port.h          # Unified CPU abstraction (interrupts, atomics, critical sections)
-├── avr/                # AVR (ATmega328P) implementation
-│   ├── port_avr.h      # AVR-specific declarations
-│   ├── port_avr.c      # AVR platform implementation
-│   └── port_avr_asm.S  # AVR assembly routines (context switching)
 └── arm/                # ARM Cortex-M implementation
     ├── port_arm.h      # ARM-specific declarations
     └── port_arm.c      # ARM platform implementation
@@ -30,30 +26,22 @@ port/
    - Maps `port_*` calls to `cpu_*` primitives
    - Platform detection and configuration
 
-3. **Platform Implementation (`port_avr.c`, `port_arm.c`)**
+3. **Platform Implementation (`port_arm.c`)**
    - Stack initialization
-   - Context switching
-   - Timer/tick management
+   - Context switching (cooperative)
+   - Timer/tick management (polling-based)
    - Watchdog and power management
    - Platform information
 
 ## Supported Platforms
 
-### AVR (ATmega328P)
-- **Target**: Arduino UNO
-- **Features**: 
-  - Nested critical sections
-  - Timer1-based preemptive scheduling
-  - Assembly-optimized context switching
-  - EEPROM storage support
-
 ### ARM Cortex-M (RA4M1)
-- **Target**: Arduino UNO R4 Minima
+- **Target**: Arduino UNO R4 Minima / WiFi
 - **Features**:
   - CMSIS-based implementation
-  - SysTick timer for scheduling
-  - PendSV for context switching
-  - Data Flash storage support
+  - Millis-based polling for system tick
+  - Cooperative multitasking
+  - Data Flash storage support (via Storage HAL)
 
 ## Adding a New Platform
 

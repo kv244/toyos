@@ -29,15 +29,7 @@
  */
 #ifndef PORT_PLATFORM
 
-#if defined(__AVR_ATmega328P__) || defined(__AVR__)
-#define PORT_PLATFORM_AVR 1
-#define PORT_PLATFORM PORT_PLATFORM_AVR
-#define PORT_ARCH_NAME "AVR"
-#define PORT_DEVICE_NAME "ATmega328P"
-
-#elif defined(__ARM_ARCH_7M__) || defined(__ARM_ARCH_7EM__) ||                 \
-    defined(__ARM_ARCH_6M__) || defined(__ARM_ARCH_8M_MAIN__) ||               \
-    defined(__ARM_ARCH_8M_BASE__)
+#if defined(__arm__) || defined(__ARM_ARCH) || defined(ARDUINO_ARCH_RENESAS)
 #define PORT_PLATFORM_ARM_CORTEX_M 1
 #define PORT_PLATFORM PORT_PLATFORM_ARM_CORTEX_M
 #define PORT_ARCH_NAME "ARM Cortex-M"
@@ -56,7 +48,7 @@
 #endif
 
 #else
-#error "Unsupported platform! Define PORT_PLATFORM manually."
+#error "Unsupported platform! ARM Cortex-M required."
 #endif
 
 #endif /* PORT_PLATFORM */
@@ -66,13 +58,8 @@
  * ======================================================================== */
 
 /* Include platform-specific implementation header */
-#if PORT_PLATFORM == PORT_PLATFORM_AVR
-#include "port/avr/port_avr.h"
-#elif PORT_PLATFORM == PORT_PLATFORM_ARM_CORTEX_M
+#define PORT_PLATFORM_ARM_CORTEX_M 1
 #include "port/arm/port_arm.h"
-#else
-#error "No port implementation for selected platform"
-#endif
 
 /* Unified CPU Abstraction Layer */
 #include "port/cpu_port.h"
@@ -85,25 +72,12 @@ extern "C" {
  * PLATFORM-SPECIFIC CONFIGURATION
  * ======================================================================== */
 
-#if PORT_PLATFORM == PORT_PLATFORM_AVR
-/* AVR Configuration */
-#define PORT_STACK_GROWS_DOWN 1
-#define PORT_POINTER_SIZE 2
-#define PORT_HAS_NESTED_INTERRUPTS 0
-#define PORT_CONTEXT_SIZE 35 /* 32 regs + SREG + 2-byte PC */
-#define PORT_MIN_STACK_SIZE 48
-
-#elif PORT_PLATFORM == PORT_PLATFORM_ARM_CORTEX_M
 /* ARM Cortex-M Configuration */
 #define PORT_STACK_GROWS_DOWN 1
 #define PORT_POINTER_SIZE 4
 #define PORT_HAS_NESTED_INTERRUPTS 1
 #define PORT_CONTEXT_SIZE 64 /* R0-R12, LR, PC, xPSR + FPU if applicable */
 #define PORT_MIN_STACK_SIZE 128
-
-#else
-#error "PORT_PLATFORM not properly configured"
-#endif
 
 /* ========================================================================
  * UNIFIED PORTING INTERFACE (Delegated to cpu_port.h or Port Impl)
@@ -118,7 +92,6 @@ static inline void port_disable_interrupts(void) { cpu_disable_interrupts(); }
 /* Target-specific implementations */
 void port_context_switch(void);
 static inline void port_enter_idle(void) { cpu_idle(); }
-static inline void *port_get_stack_pointer(void) { return cpu_get_sp(); }
 
 /* Atomics (Inlined) */
 static inline uint8_t port_atomic_inc_u8(volatile uint8_t *ptr) {

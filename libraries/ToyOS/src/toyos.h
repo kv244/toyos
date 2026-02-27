@@ -12,7 +12,7 @@
  * - Message queues for inter-task communication
  * - Stack overflow detection with canaries
  * - Optimized context switching in assembly
- * - Multiplatform support (AVR, ARM Cortex-M planned)
+ * - Multiplatform support (ARM Cortex-M primary)
  *
  * Author: [Your Name]
  * Version: 2.5.0
@@ -54,7 +54,6 @@ extern "C" {
 #include "hal/storage_driver.h"
 #include "toyos_config.h"
 
-
 /* ========================================================================
  * CONFIGURATION CONSTANTS (from toyos_config.h)
  * ======================================================================== */
@@ -86,61 +85,6 @@ extern "C" {
  * Configurable via TOYOS_STACK_CANARY in toyos_config.h
  */
 #define STACK_CANARY TOYOS_STACK_CANARY
-
-/* ========================================================================
- * HARDWARE-SPECIFIC CONSTANTS (ATmega328P @ 16MHz)
- * ======================================================================== */
-
-/**
- * Timer1 prescaler configuration.
- * Calculated from TOYOS_TIMER_PRESCALER in toyos_config.h
- */
-#define TIMER1_PRESCALER_64 TOYOS_TIMER_PRESCALER_BITS
-
-/**
- * Timer1 compare value for system tick.
- * Calculated from TOYOS_TICK_RATE_HZ and TOYOS_TIMER_PRESCALER
- */
-#define TIMER1_1MS_AT_16MHZ ((uint16_t)TOYOS_TIMER_COMPARE_VALUE)
-
-/**
- * System tick frequency in Hz.
- * Configurable via TOYOS_TICK_RATE_HZ in toyos_config.h
- */
-#define OS_TICK_RATE_HZ TOYOS_TICK_RATE_HZ
-
-/**
- * Convert milliseconds to ticks.
- * Usage: os_delay(MS_TO_TICKS(500)); // 500ms delay
- */
-#define MS_TO_TICKS(ms) TOYOS_MS_TO_TICKS(ms)
-
-/**
- * Convert seconds to ticks.
- * Usage: os_delay(SEC_TO_TICKS(2)); // 2 second delay
- */
-#define SEC_TO_TICKS(sec) TOYOS_SEC_TO_TICKS(sec)
-
-/* ========================================================================
- * TASK CONTROL BLOCK STRUCTURE OFFSETS
- * ======================================================================== */
-
-/**
- * Offset of stack_ptr field in TaskControlBlock structure.
- * Used by assembly code for efficient access.
- *
- * CRITICAL: Must be updated if TCB structure changes!
- *
- * Current TCB layout:
- *   Offset 0: uint8_t *stack_ptr       (2 bytes) <- TARGET
- *   Offset 2: uint8_t id               (1 byte)
- *   Offset 3: TaskState state          (1 byte)
- *   Offset 4: void (*task_func)(void)  (2 bytes)
- *   Offset 6: uint16_t stack_size      (2 bytes)
- *   Offset 8: uint8_t priority         (1 byte)
- *   Offset 9: uint16_t delta_ticks     (2 bytes)
- */
-#define TCB_STACK_PTR_OFFSET 0
 
 /* ========================================================================
  * TASK STATES
@@ -241,31 +185,6 @@ typedef struct {
    */
   uint32_t *canary_ptr;
 } TaskControlBlock;
-
-/* ========================================================================
- * ASSEMBLY FUNCTIONS (Implemented in os_switch.S)
- * ======================================================================== */
-
-/**
- * Context switch routine.
- * Saves current task's CPU context, calls scheduler, restores new task's
- * context.
- *
- * Called from:
- * - Timer ISR (preemptive scheduling)
- * - os_delay() (voluntary blocking)
- * - os_task_yield() (voluntary yield)
- * - os_sem_wait() / os_mutex_lock() (blocking on resources)
- *
- * Context saved (35 bytes total):
- * - R0-R31 (32 general purpose registers)
- * - SREG (status register)
- * - PC (program counter, saved automatically by call/interrupt)
- *
- * @note This function never returns to the same task!
- *       It always returns to the task selected by scheduler.
- */
-void os_context_switch(void);
 
 /* ========================================================================
  * TASK QUEUE DATA STRUCTURES
@@ -413,56 +332,14 @@ typedef struct {
  *     Serial.print("A");     Serial.print("B");
  *     unlock(uart_mutex);    unlock(uart_mutex);
  *
- * Note: Currently does NOT implement priority inheritance.
  *       High priority tasks can be blocked by low priority tasks
- *       holding the mutex (priority inversion).
+ *       holding the mutex (priority inversion) unless inheritance enabled.
  */
 typedef struct {
   volatile uint8_t locked; /**< 0 = unlocked, 1 = locked */
   TaskControlBlock *owner; /**< Task currently holding mutex */
   TaskQueue blocked_tasks; /**< FIFO queue of waiting tasks */
 } Mutex;
-
-/* ========================================================================
- * INTER-TASK COMMUNICATION
- * ======================================================================== */
-
-/**
- * Fixed-size circular buffer message queue.
- *
- * Thread-safe message passing between tasks using semaphores and mutex.
- *
- * Properties:
- * - FIFO ordering
- * - Fixed capacity (set at creation)
- * - Blocking send when full
- * - Blocking receive when empty
- *
- * Internals:
- * - sem_read: Count of messages available to read (starts at 0)
- * - sem_write: Count of slots available to write (starts at capacity)
- * - mutex: Protects buffer access from concurrent modification
- *
- * Operations:
- * - send(): wait(sem_write) -> lock(mutex) -> write -> unlock(mutex) ->
- * post(sem_read)
- * - receive(): wait(sem_read) -> lock(mutex) -> read -> unlock(mutex) ->
- * post(sem_write)
- *
- * Fast path optimization:
- * - send_fast()/receive_fast() check availability without blocking
- * - Reduces context switches by ~75% when queue not full/empty
- */
-typedef struct {
-  void **buffer;       /**< Circular buffer of message pointers */
-  uint8_t capacity;    /**< Maximum number of messages */
-  uint8_t head;        /**< Index of next message to read */
-  uint8_t tail;        /**< Index where next message will be written */
-  uint8_t count;       /**< Current number of messages in queue */
-  Semaphore sem_read;  /**< Semaphore for messages available */
-  Semaphore sem_write; /**< Semaphore for slots available */
-  Mutex mutex;         /**< Mutex for buffer protection */
-} MessageQueue;
 
 /* ========================================================================
  * KERNEL STATE
@@ -488,7 +365,7 @@ typedef struct {
   TaskQueue blocked_queue;        /**< Delta queue of delayed tasks */
   TaskControlBlock *current_task; /**< Currently running task */
   TaskNode *current_node;         /**< Node pointer for current task */
-  MemoryManager mem_manager;      /**< Bump allocator state */
+  MemoryManager mem_manager;      /**< Free-list allocator state */
   volatile uint32_t system_tick;  /**< Milliseconds since os_start() */
   uint8_t task_count;             /**< Total number of tasks created */
 } Kernel;
@@ -541,8 +418,6 @@ typedef struct {
 #define STATIC_ASSERT(condition)                                               \
   typedef char static_assertion_failed[(condition) ? 1 : -1]
 
-/* Verify critical assumptions at compile time */
-STATIC_ASSERT(TCB_STACK_PTR_OFFSET == 0);
 STATIC_ASSERT(MAX_TASKS > 0 && MAX_TASKS <= 32);
 STATIC_ASSERT(MIN_STACK_SIZE >= 48);
 STATIC_ASSERT(DEFAULT_STACK_SIZE >= MIN_STACK_SIZE);
@@ -673,24 +548,6 @@ void os_create_task(uint8_t id, void (*task_func)(void), uint8_t priority,
 void os_start(void);
 
 /**
- * Print detailed system information (Version, Platform, Memory).
- * This function uses Serial port and blocks until output is done.
- * Best called during setup() before os_start().
- */
-void os_print_info(void);
-
-/**
- * Print a string to the system console via SVC (if MPU enabled).
- */
-void os_print(const char *msg);
-
-/**
- * Print a string from Flash memory (PROGMEM) to the system console.
- * Only applicable on AVR targets.
- */
-void os_print_p(const char *msg_p);
-
-/**
  * Task scheduler - selects next task to run.
  *
  * Called from:
@@ -703,8 +560,9 @@ void os_print_p(const char *msg_p);
  * 2. Pop tasks from heap until ready task found (skip blocked)
  * 3. Set new task as current and mark RUNNING
  *
- * @note This function is called from interrupt context - keep it fast!
- * @note Do not call directly - use os_task_yield() instead
+ * @note This function is called from interrupt context or k_yield() - keep it
+ * fast!
+ * @note Do not call directly - use os_yield() instead
  */
 void os_scheduler(void);
 
@@ -932,131 +790,8 @@ void os_mutex_lock(Mutex *mutex);
 void os_mutex_unlock(Mutex *mutex);
 
 /* ========================================================================
- * PUBLIC API - MESSAGE QUEUES
- * ======================================================================== */
-
-/**
- * Create a message queue.
- *
- * Allocates queue structure and buffer from memory pool.
- *
- * @param capacity Maximum number of messages queue can hold
- * @return Pointer to message queue, or NULL if out of memory
- *
- * Memory used: sizeof(MessageQueue) + capacity * sizeof(void*)
- *
- * Example:
- *   MessageQueue *mq = os_mq_create(10); // Queue with 10 slots
- *   if (mq == NULL) {
- *     // Out of memory!
- *   }
- */
-MessageQueue *os_mq_create(uint8_t capacity);
-
-/**
- * Send message to queue (blocking).
- *
- * If queue full: Block until space available
- * Otherwise: Add message and wake waiting receiver
- *
- * @param mq Pointer to message queue
- * @param msg Message pointer (can be any pointer)
- *
- * Blocking: Yes (if queue full)
- * Overhead: Up to 4 context switches (sem, mutex, mutex, sem)
- *
- * @note Consider os_mq_send_fast() for better performance
- *
- * Example:
- *   int *data = (int*)malloc(sizeof(int));
- *   *data = 42;
- *   os_mq_send(mq, data);
- */
-void os_mq_send(MessageQueue *mq, void *msg);
-
-/**
- * Receive message from queue (blocking).
- *
- * If queue empty: Block until message available
- * Otherwise: Remove message and wake waiting sender
- *
- * @param mq Pointer to message queue
- * @return Message pointer
- *
- * Blocking: Yes (if queue empty)
- * Overhead: Up to 4 context switches
- *
- * @note Consider os_mq_receive_fast() for better performance
- *
- * Example:
- *   void *msg = os_mq_receive(mq);
- *   int *data = (int*)msg;
- *   process_data(*data);
- */
-void *os_mq_receive(MessageQueue *mq);
-
-/**
- * Send message to queue (fast path optimization).
- *
- * Checks for space availability before blocking.
- * If space available, performs entire operation atomically.
- *
- * @param mq Pointer to message queue
- * @param msg Message pointer
- *
- * Performance:
- * - Non-blocking case: 0 context switches (vs 4 for os_mq_send)
- * - Blocking case: Falls back to os_mq_send()
- *
- * Improvement: ~75% reduction in context switches for typical usage
- *
- * Example:
- *   os_mq_send_fast(mq, data); // Much faster when not full!
- */
-void os_mq_send_fast(MessageQueue *mq, void *msg);
-
-/**
- * Receive message from queue (fast path optimization).
- *
- * Checks for message availability before blocking.
- * If message available, performs entire operation atomically.
- *
- * @param mq Pointer to message queue
- * @return Message pointer
- *
- * Performance: Same benefits as os_mq_send_fast()
- *
- * Example:
- *   void *msg = os_mq_receive_fast(mq);
- */
-void *os_mq_receive_fast(MessageQueue *mq);
-
-/* ========================================================================
  * PUBLIC API - SYSTEM MONITORING
  * ======================================================================== */
-
-/**
- * Check for stack overflow in current task.
- *
- * Verifies stack canary value at bottom of stack.
- * If corrupted, halts system to prevent further corruption.
- *
- * Call periodically from idle loop or low-priority task.
- *
- * On overflow detection:
- * - Disables interrupts
- * - Enters infinite loop
- * - Could be extended to log error, blink LED, etc.
- *
- * Example:
- *   void idle_task(void) {
- *     while(1) {
- *       os_check_stack_overflow();
- *       os_delay(1000);
- *     }
- *   }
- */
-void os_check_stack_overflow(void);
 
 /**
  * Enter idle mode (sleep until interrupt).
@@ -1086,23 +821,6 @@ void os_wdt_init(uint16_t timeout_ms);
  * Usually called from the OS Idle Task.
  */
 void os_wdt_feed(void);
-
-/**
- * Get stack usage high-water mark for a task.
- *
- * Scans the stack to find the deepest point reached during execution.
- *
- * @param task_id ID of the task to check
- * @return Number of bytes used (including context and canary)
- */
-uint16_t os_get_stack_usage(uint8_t task_id);
-
-/**
- * Get current priority of a task (may be inherited).
- * @param task_id ID of the task
- * @return Current priority
- */
-uint8_t os_get_priority(uint8_t task_id);
 
 #ifdef __cplusplus
 }
