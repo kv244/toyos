@@ -226,7 +226,6 @@ static void mpu_configure_flash_region(void) {
 bool port_mpu_init(void) {
   // Check if MPU is present
   if (!mpu_is_present()) {
-    Serial.println(F("MPU: Not present or insufficient regions"));
     return false;
   }
 
@@ -247,10 +246,6 @@ bool port_mpu_init(void) {
   __asm volatile("isb" ::: "memory");
 
   mpu_initialized = true;
-
-  Serial.println(F("MPU: Initialized successfully"));
-  Serial.print(F("MPU: Regions configured: "));
-  Serial.println((MPU_TYPE >> 8) & 0xFF);
 
   return true;
 }
@@ -325,37 +320,9 @@ bool port_mpu_is_enabled(void) { return (MPU_CTRL & MPU_CTRL_ENABLE) != 0; }
  * Called when a memory protection violation occurs
  */
 void MemManage_Handler(void) {
-  // Read fault status registers
-  uint32_t cfsr = (*((volatile uint32_t *)0xE000ED28));
-  uint32_t mmfar = (*((volatile uint32_t *)0xE000ED34));
-  uint32_t bfar = (*((volatile uint32_t *)0xE000ED38));
-
-  Serial.println(F("\n*** MPU FAULT DETECTED ***"));
-  Serial.print(F("CFSR: 0x"));
-  Serial.println(cfsr, HEX);
-
-  if (cfsr & (1 << 7)) { // MMARVALID
-    Serial.print(F("Fault Address: 0x"));
-    Serial.println(mmfar, HEX);
-  }
-
-  if (cfsr & (1 << 0)) {
-    Serial.println(F("Violation: Instruction access"));
-  }
-  if (cfsr & (1 << 1)) {
-    Serial.println(F("Violation: Data access"));
-  }
-  if (cfsr & (1 << 4)) {
-    Serial.println(F("Violation: Stack push"));
-  }
-  if (cfsr & (1 << 5)) {
-    Serial.println(F("Violation: Stack pop"));
-  }
-
-  // Halt system
-  Serial.println(F("System halted due to MPU fault"));
+  /* MPU Fault: System Halted */
   while (1) {
-    delay(1000);
+    /* Blink error pattern or stay halted */
   }
 }
 

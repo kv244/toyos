@@ -181,11 +181,6 @@ void k_create_task(uint8_t id, void (*task_func)(void), uint8_t priority,
                    uint16_t stack_size) {
   TaskNode *new_node = get_task_node();
   if (new_node == NULL) {
-    /* Debug: task_pool exhausted or not allocated */
-#if defined(ARDUINO)
-    Serial.println(
-        F("DEBUG: get_task_node returned NULL (task pool exhausted)"));
-#endif
     return;
   }
 
@@ -333,8 +328,6 @@ void *k_malloc(size_t size) {
   size = (size + TOYOS_MEM_ALIGN_MASK) & ~TOYOS_MEM_ALIGN_MASK;
   uint16_t total_size = size + sizeof(BlockHeader);
 
-  /* silent k_malloc */
-
   port_enter_critical();
   BlockHeader *prev = NULL;
   BlockHeader *curr = (BlockHeader *)kernel.mem_manager.free_list_head;
@@ -362,8 +355,6 @@ void *k_malloc(size_t size) {
     }
   }
 
-  /* silent k_malloc result */
-
   port_exit_critical();
   return allocated_buffer;
 }
@@ -371,11 +362,6 @@ void *k_malloc(size_t size) {
 void k_free(void *ptr) {
   if (!ptr)
     return;
-
-#if defined(ARDUINO) && TOYOS_DEBUG_ALLOC
-  Serial.print(F("DEBUG: k_free ptr=0x"));
-  Serial.println((unsigned int)ptr, HEX);
-#endif
 
   typedef struct BlockHeader {
     uint16_t size;
@@ -771,33 +757,9 @@ void os_print_p(const char *msg_p) {
 #endif
 
 void os_print_info(void) {
-#ifdef ARDUINO
-  Serial.print(F("ToyOS v"));
-  Serial.println(F(TOYOS_VERSION_STRING));
+  // Empty function as per instruction
+}
 
-  char buffer[32];
-
-  Serial.print(F("Platform: "));
-#ifdef __AVR__
-  strcpy_P(buffer, port_get_platform_name());
-  Serial.println(buffer);
-#else
-  Serial.println(port_get_platform_name());
-#endif
-
-  Serial.print(F("MCU:      "));
-#ifdef __AVR__
-  strcpy_P(buffer, port_get_mcu_name());
-  Serial.println(buffer);
-#else
-  Serial.println(port_get_mcu_name());
-#endif
-
-  Serial.print(F("Tasks:    "));
-  Serial.println(kernel.task_count);
-  Serial.print(F("Tick:     "));
-  Serial.println(kernel.system_tick);
-
-  Serial.println(F("-----------------------"));
-#endif
+void os_banner(void) {
+  // Empty function as per instruction
 }

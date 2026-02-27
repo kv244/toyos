@@ -1,8 +1,10 @@
 #include <Arduino.h>
 
 #ifndef TOYOS_DEBUG_ALLOC
-#define TOYOS_DEBUG_ALLOC 0
+#define TOYOS_DEBUG_ALLOC 1
 #endif
+
+#define TOYOS_DEBUG_ENABLED 1
 
 /* Include OS and KV Database */
 #include <kv_db.h>
@@ -138,6 +140,9 @@ void process_command(char *cmd) {
 }
 
 void task_db_demo(void) {
+  /* Initialize serial mutex before use */
+  os_mutex_init(&serial_mutex);
+
   /* Initialize storage driver (HAL automatically selects correct platform
    * driver) */
   storage_bind_platform_driver();
@@ -188,9 +193,9 @@ void task_db_demo(void) {
 
 void task_idle(void) {
   while (1) {
-    os_wdt_feed();
-    os_check_stack_overflow();
-    os_enter_idle();
+    Serial.println("OS TICK (IDLE)");
+    digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+    os_delay(1000);
   }
 }
 
@@ -229,14 +234,13 @@ void setup() {
   /* Initialize serial for debug output (faster baud) */
   Serial.begin(115200);
   unsigned long tstart = millis();
-  while (!Serial && (millis() - tstart) < 2000)
-    ; /* Wait up to 2s for serial connection */
+  while (!Serial && (millis() - tstart) < 5000)
+    ;          /* Wait up to 5s for serial connection */
+  delay(1000); /* Wait more for terminal to be ready */
 
-#if TOYOS_DEBUG_ENABLED
   /* Early serial sanity check */
   Serial.println(F("BOOT: early"));
   Serial.flush();
-#endif
 
   /* Report reset cause (MCUSR) on AVR to detect watchdog/brown-out/etc */
 #ifdef __AVR__
@@ -270,10 +274,8 @@ void setup() {
 #endif
 
   /* Emit a single boot trace and pulse LED once for visual confirmation */
-#if TOYOS_DEBUG_ENABLED
   Serial.println(F("BOOT TRACE"));
   Serial.flush();
-#endif
   digitalWrite(LED_BUILTIN, HIGH);
   delay(50);
   digitalWrite(LED_BUILTIN, LOW);
@@ -289,16 +291,21 @@ void setup() {
 #endif
 
   /* Create tasks */
-  os_create_task(2, task_idle, 0, 160);    // ID 2, Pri 0, Stack 160
-  os_create_task(1, task_db_demo, 1, 384); // ID 1, Pri 1, Stack 384
+  Serial.println(F("Creating task idle..."));
+  Serial.flush();
+  os_create_task(2, task_idle, 0, 160); // ID 2, Pri 0, Stack 160
+  Serial.println(F("Task idle created!"));
+  Serial.flush();
+  // os_create_task(1, task_db_demo, 1, 384); // ID 1, Pri 1, Stack 384
 
-#if TOYOS_DEBUG_ENABLED
   Serial.println(F("REACHED END OF SETUP"));
   Serial.flush();
-#endif
 
   /* Start the RTOS (never returns) */
   os_start();
 }
 
-void loop() {}
+void loop() {
+  Serial.println("Looping...");
+  delay(1000);
+}
