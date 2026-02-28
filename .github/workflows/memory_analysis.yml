@@ -30,9 +30,15 @@ jobs:
     - name: Locate Toolchain
       id: toolchain
       run: |
-        # Find where arm-none-eabi-gcc is installed
-        GCC_PATH=$(find /home/runner/.arduino15/packages/arduino/tools -name "arm-none-eabi-gcc" | head -n 1)
-        TOOLCHAIN_DIR=$(dirname "$GCC_PATH")
+        # Find where the ARM toolchain binary is located
+        # We look for the 'bin' directory containing arm-none-eabi-gcc
+        BINARY_PATH=$(find $HOME/.arduino15/packages/arduino/tools -type f -name "arm-none-eabi-size" | head -n 1)
+        if [ -z "$BINARY_PATH" ]; then
+          echo "Toolchain not found! Listing tools directory:"
+          find $HOME/.arduino15/packages/arduino/tools -maxdepth 4
+          exit 1
+        fi
+        TOOLCHAIN_DIR=$(dirname "$BINARY_PATH")
         echo "TOOLCHAIN_DIR=$TOOLCHAIN_DIR" >> $GITHUB_ENV
         echo "Found toolchain at: $TOOLCHAIN_DIR"
 
