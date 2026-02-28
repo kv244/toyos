@@ -1,3 +1,15 @@
+/**
+ * @file kv_db_demo.ino
+ * @brief Interactive CLI demonstration for the ToyOS Key-Value Database.
+ *
+ * Provides a serial-based interface to interact with the persistent storage.
+ * Supported commands:
+ * - ADD k,v   : Write/Update a key with a value.
+ * - DEL k     : Delete a key.
+ * - SHOW      : List all database entries.
+ * - LIST p    : List entries starting with prefix p.
+ */
+
 #include <Arduino.h>
 #include <kv_db.h>
 #include <toyos.h>
@@ -22,7 +34,8 @@ void task_blink(void) {
 }
 
 void task_cli(void) {
-  log_msg("ToyOS KV Database CLI Ready. Commands: ADD k,v | SHOW");
+  log_msg("ToyOS KV Database CLI Ready. Commands: ADD k,v | DEL k | SHOW | "
+          "LIST prefix");
   static char cmd[64];
   static uint8_t pos = 0;
 
@@ -43,11 +56,34 @@ void task_cli(void) {
               else
                 log_msg("Error: Write failed");
             }
+          } else if (strncmp(cmd, "DEL ", 4) == 0) {
+            char *k = cmd + 4;
+            if (kv_delete(k) == KV_SUCCESS)
+              log_msg("OK: Deleted");
+            else
+              log_msg("Error: Delete failed");
           } else if (strcmp(cmd, "SHOW") == 0) {
             os_mutex_lock(&serial_mutex);
             Serial.println("--- DB Content ---");
             kv_iterate(
                 NULL,
+                [](const char *k, const void *v, uint16_t l, void *ctx) {
+                  Serial.print(k);
+                  Serial.print(": ");
+                  Serial.write((const uint8_t *)v, l);
+                  Serial.println();
+                },
+                NULL);
+            Serial.println("------------------");
+            os_mutex_unlock(&serial_mutex);
+          } else if (strncmp(cmd, "LIST ", 5) == 0) {
+            char *prefix = cmd + 5;
+            os_mutex_lock(&serial_mutex);
+            Serial.print("--- Prefix '");
+            Serial.print(prefix);
+            Serial.println("' ---");
+            kv_iterate(
+                prefix,
                 [](const char *k, const void *v, uint16_t l, void *ctx) {
                   Serial.print(k);
                   Serial.print(": ");

@@ -1,4 +1,12 @@
 #include "port.h"
+/**
+ * @file os_kernel.cpp
+ * @brief Core implementation of the ToyOS RTOS kernel.
+ *
+ * Implements the scheduler, task management, synchronization primitives,
+ * and memory management for the operating system.
+ */
+
 #include "toyos.h"
 #include "toyos_config.h"
 #include <string.h>

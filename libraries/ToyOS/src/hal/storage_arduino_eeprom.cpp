@@ -1,6 +1,9 @@
 /**
- * Arduino EEPROM (Flash Emulation) Storage Driver
- * Strictly bound to Renesas R4 platforms.
+ * @file storage_arduino_eeprom.cpp
+ * @brief Arduino EEPROM storage driver implementation.
+ *
+ * Provides an abstraction layer for the native Arduino EEPROM library,
+ * specifically optimized for Renesas R4 platforms with watchdog feeding.
  */
 
 #include "storage_arduino_eeprom.h"

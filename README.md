@@ -1,18 +1,18 @@
 # ToyOS - Tiny Operating System for Arduino
 
-**Version 2.5.2 - MULTI-PLATFORM (AVR + ARM Cortex-M)**  
+**Version 2.5.3 - ARM Cortex-M Optimized**  
 **Status:** ✅ Production Ready for Hobbyist/Education  
-**Last Updated:** February 1, 2026
+**Last Updated:** February 28, 2026
 
-ToyOS is a lightweight, preemptive Real-Time Operating System (RTOS) designed for embedded systems. It supports multiple architectures including **Arduino UNO (AVR)** and **Arduino UNO R4 (ARM Cortex-M4)** with a unified CPU abstraction layer for maximum performance. Features include priority-based multitasking, inter-process communication, efficient resource management, and a persistent key-value database.
+ToyOS is a lightweight, preemptive Real-Time Operating System (RTOS) designed for embedded systems. It currently supports **Arduino UNO R4 (ARM Cortex-M4)** with a unified CPU abstraction layer for maximum performance. **Note: AVR (ATmega328P) support has been temporarily removed due to memory and resource constraints.** Features include priority-based multitasking, inter-process communication, efficient resource management, and a persistent key-value database.
 
-**Recent Improvements (v2.5.2):**
-- ✅ **Hardened MPU Sandbox** - Restricted peripheral access and kernel protection (ARM)
-- ✅ **Secure Serial Gateway** - Use `os_print()` for thread-safe, MPU-aware logging
-- ✅ **KV Database Stabilization** - Complete rewrite for LFS support and wear leveling
-- ✅ **Multi-Platform Build Verified** - 100% success on both AVR and ARM architectures
-- ✅ **RAM-Based Indexing** - Optimized lookups with O(1) performance on ARM
-- ✅ **Hierarchical Keys** - Supporting prefix-based iteration for structured paths
+**Recent Improvements (v2.5.3):**
+- ✅ **KV Database Demo Expanded** - Added DEL and LIST commands to the CLI.
+- ✅ **Hardened MPU Sandbox** - Restricted peripheral access and kernel protection (ARM).
+- ✅ **Secure Serial Gateway** - Use `os_print()` for thread-safe, MPU-aware logging.
+- ✅ **KV Database Stabilization** - Complete rewrite for LFS support and wear leveling.
+- ✅ **RAM-Based Indexing** - Optimized lookups with O(1) performance on ARM.
+- ✅ **Hierarchical Keys** - Supporting prefix-based iteration for structured paths.
 
 ---
 

@@ -1,3 +1,11 @@
+/**
+ * @file KVTestRunner.ino
+ * @brief Automated test suite for the ToyOS Key-Value Database.
+ *
+ * Runs a series of regression tests covering CRUD operations, prefix iteration,
+ * and database clearing. Results are reported via Serial.
+ */
+
 #include <Arduino.h>
 #include <kv_db.h>
 #include <toyos.h>

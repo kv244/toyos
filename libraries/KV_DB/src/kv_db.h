@@ -1,3 +1,11 @@
+/**
+ * @file kv_db.h
+ * @brief Key-Value Database API for ToyOS.
+ *
+ * Provides a persistent, log-structured storage system with wear leveling.
+ * Supports CRUD operations, atomic writes, and prefix-based iteration.
+ */
+
 #ifndef KV_DB_H
 #define KV_DB_H
 

@@ -1,3 +1,11 @@
+/**
+ * @file kv_db.cpp
+ * @brief Implementation of the ToyOS Key-Value Database.
+ *
+ * Implements log-structured storage with an in-RAM index for fast access.
+ * Handles wear leveling by rotating through blocks and compacting when full.
+ */
+
 #include "kv_db.h"
 #include "hal/storage_driver.h"
 #include "kv_hal.h"

@@ -1,20 +1,8 @@
 /**
- * ToyOS Configuration Header
+ * @file toyos_config.h
+ * @brief Global configuration parameters for the ToyOS RTOS.
  *
- * This file contains user-configurable parameters for the ToyOS RTOS.
- * Customize these values based on your application requirements and
- * available hardware resources.
- *
- * To override defaults:
- * 1. Copy this file to your project directory as "toyos_user_config.h"
- * 2. Uncomment and modify the desired parameters
- * 3. Define TOYOS_USER_CONFIG before including toyos.h:
- *    #define TOYOS_USER_CONFIG
- *    #include <toyos.h>
- *
- * Author: [Your Name]
- * Version: 2.4
- * Date: January 2026
+ * Allows users to tune task limits, stack sizes, and feature toggles.
  */
 
 #ifndef TOYOS_CONFIG_H
