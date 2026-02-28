@@ -9,20 +9,17 @@
     defined(ARDUINO_UNOR4_WIFI)
 #include <Arduino.h>
 #include <EEPROM.h>
+#include <toyos.h>
 
-static storage_result_t arduino_eeprom_init(void) {
-  /* R4 EEPROM emulation might need begin() if not auto-started?
-   * On R4, explicit begin() is sometimes good practice but usually standard
-   * EEPROM lib handles it.
-   */
-  return STORAGE_OK;
-}
+static storage_result_t arduino_eeprom_init(void) { return STORAGE_OK; }
 
 static storage_result_t arduino_eeprom_read(uint32_t addr, void *buf,
                                             size_t len) {
   uint8_t *p = (uint8_t *)buf;
   for (size_t i = 0; i < len; i++) {
     p[i] = EEPROM.read(addr + i);
+    if ((i & 0x7F) == 0)
+      os_wdt_feed();
   }
   return STORAGE_OK;
 }
@@ -33,6 +30,8 @@ static storage_result_t arduino_eeprom_write(uint32_t addr, const void *buf,
   for (size_t i = 0; i < len; i++) {
     /* update() writes only if changed, saving cycles/wear */
     EEPROM.update(addr + i, p[i]);
+    if ((i & 0x3F) == 0)
+      os_wdt_feed();
   }
   return STORAGE_OK;
 }
@@ -42,6 +41,8 @@ static uint32_t arduino_eeprom_capacity(void) { return EEPROM.length(); }
 static storage_result_t arduino_eeprom_erase(uint32_t addr, size_t len) {
   for (size_t i = 0; i < len; i++) {
     EEPROM.update(addr + i, 0xFF);
+    if ((i & 0x3F) == 0)
+      os_wdt_feed();
   }
   return STORAGE_OK;
 }

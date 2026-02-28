@@ -97,7 +97,9 @@ toyos/
 ├── README.md                       # Project documentation
 ├── CODE_QUALITY_SUMMARY.md         # Code quality report
 ├── app/                            # Application examples
-│   └── kv_db_demo/                 # KV database demo
+│   ├── BasicKV/                    # Simple KV usage example
+│   ├── KVTestRunner/               # Automated KV test suite
+│   └── kv_db_demo/                 # KV database CLI demo
 │       └── kv_db_demo.ino
 └── libraries/
     ├── ToyOS/                      # Core RTOS library
@@ -308,18 +310,25 @@ void task_demo(void) {
 
 ---
 
-## 🎮 Demo Application
+## 🎮 Demo Applications
 
-The `kv_db_demo` application demonstrates:
-1. **Automated Test Suite**: Runs comprehensive tests on startup
-2. **Manual CRUD Operations**: Demonstrates write, read, update, and delete
-3. **Thread Safety**: Shows database access from RTOS tasks
+### 1. BasicKV
+A minimal example showing:
+- Persistence of boot counters.
+- Periodic checkpointing of task data.
+- Basic `kv_read` and `kv_write` usage.
 
-### Demo Flow
-1. Initializes ToyOS and KV Database
-2. Runs automated tests (CRUD, persistence, edge cases, concurrency)
-3. Performs manual operations on the `username` key
-4. Uses a watchdog-protected idle task
+### 2. KVTestRunner
+Automated regression suite covering:
+- CRUD operations (Create, Read, Update, Delete).
+- Prefix-based iteration (`kv_iterate`).
+- Database clearing and state management.
+
+### 3. kv_db_demo
+Interactive CLI application:
+- **ADD k,v**: Writes a key-value pair.
+- **SHOW**: Lists all keys and values in the database.
+- Demonstrates thread-safe access from multiple OS tasks.
 
 ---
 
@@ -410,11 +419,12 @@ Then enable it in your sketch:
 
 ## 📝 Version History
 
-### v2.5.2 (February 2026) - SECURITY HARDENING
+### v2.5.2 (February 2026) - SECURITY & STABILITY HARDENING
 - ✅ **Hardened Sandbox**: Denied unprivileged access to all peripheral blocks on ARM.
 - ✅ **Secure Serial**: Added `os_print()` syscall for mediated Serial access.
 - ✅ **KV DB Stabilization**: Full rewrite of `kv_db.cpp` with LFS and wear leveling.
-- ✅ **Security Demo**: Added intentional violation test to verify MPU enforcement.
+- ✅ **Watchdog-Safe Storage**: Added automatic WDT feeding in R4 storage driver to prevent resets during Flash erasure.
+- ✅ **New Demos**: Added `BasicKV` and `KVTestRunner` for easier onboarding and regression testing.
 
 ### v2.5.1 (January 2026) - PORTABILITY REFINED
 - ✅ **O(1) ARM Performance**: Added Shadow Index (Hash Table) for constant-time lookups on R4.

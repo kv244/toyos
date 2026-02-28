@@ -506,6 +506,27 @@ int16_t kv_compact(void) {
       }
     }
 
+    uint16_t rec_total = (uint16_t)(sizeof(KVRecord) + k_len + rec.val_len);
+
+    /* Sector switching logic for compaction */
+    if ((current_write_offset + rec_total) > KV_SECTOR_SIZE) {
+      current_write_sector++;
+      if (current_write_sector >= KV_NUM_SECTORS) {
+        /* This should theoretically not happen if live data < capacity */
+        if (val)
+          os_free(val);
+        error_occurred = true;
+        break;
+      }
+      if (format_sector(current_write_sector) != STORAGE_OK) {
+        if (val)
+          os_free(val);
+        error_occurred = true;
+        break;
+      }
+      current_write_offset = KV_RECORDS_OFFSET;
+    }
+
     uint32_t new_addr =
         current_write_sector * KV_SECTOR_SIZE + current_write_offset;
 
@@ -521,7 +542,7 @@ int16_t kv_compact(void) {
     }
 
     kv_index[i].addr = (uint16_t)new_addr;
-    current_write_offset += sizeof(KVRecord) + k_len + rec.val_len;
+    current_write_offset += rec_total;
 
     if (val)
       os_free(val);
@@ -550,6 +571,7 @@ kv_result_t kv_iterate(const char *prefix, kv_iter_cb_t cb, void *ctx) {
   char temp_val[KV_ITER_TEMP_BUF_SIZE]; /* buffer for small values */
 
   for (uint16_t i = 0; i < kv_index_count; i++) {
+    os_wdt_feed();
     const char *key = get_key_for_entry(&kv_index[i], temp_key);
 
     if (p_len == 0 || strncmp(key, prefix, p_len) == 0) {
